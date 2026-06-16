@@ -1,0 +1,4308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>Encrypted Image Vault</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+
+      --background: #070a11;
+      --surface: #101521;
+      --surface-2: #151c2b;
+      --surface-3: #1b2435;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-strong: rgba(255, 255, 255, 0.17);
+      --text: #f4f7fb;
+      --muted: #8f9bad;
+      --primary: #7c5cff;
+      --primary-hover: #8e73ff;
+      --green: #28b779;
+      --green-hover: #34ca89;
+      --red: #e05263;
+      --red-hover: #ef6576;
+      --shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(
+          circle at 20% 0%,
+          rgba(124, 92, 255, 0.18),
+          transparent 32%
+        ),
+        radial-gradient(
+          circle at 100% 10%,
+          rgba(46, 190, 255, 0.1),
+          transparent 28%
+        ),
+        var(--background);
+      color: var(--text);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system,
+        BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+    }
+
+    .page-shell {
+      width: min(1180px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 34px 0 80px;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 26px;
+    }
+
+    .brand-block h1 {
+      margin: 0;
+      font-size: clamp(27px, 5vw, 42px);
+      letter-spacing: -0.04em;
+    }
+
+    .brand-block p {
+      max-width: 650px;
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .security-badge {
+      flex: 0 0 auto;
+      padding: 9px 13px;
+      border: 1px solid rgba(124, 92, 255, 0.3);
+      border-radius: 999px;
+      background: rgba(124, 92, 255, 0.12);
+      color: #c5b8ff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background:
+        linear-gradient(
+          145deg,
+          rgba(255, 255, 255, 0.045),
+          rgba(255, 255, 255, 0.015)
+        ),
+        var(--surface);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .upload-panel {
+      padding: 20px;
+    }
+
+    .drop-area {
+      position: relative;
+      min-height: 155px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 26px;
+      overflow: hidden;
+      border: 1.5px dashed rgba(158, 141, 255, 0.55);
+      border-radius: 18px;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(124, 92, 255, 0.12),
+          rgba(46, 190, 255, 0.05)
+        );
+      cursor: pointer;
+      text-align: center;
+      transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        background 0.2s ease;
+    }
+
+    .drop-area:hover,
+    .drop-area.active {
+      transform: translateY(-2px);
+      border-color: #a997ff;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(124, 92, 255, 0.2),
+          rgba(46, 190, 255, 0.08)
+        );
+    }
+
+    .drop-area::before {
+      content: "";
+      position: absolute;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: rgba(124, 92, 255, 0.15);
+      filter: blur(45px);
+      pointer-events: none;
+    }
+
+    .drop-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .drop-content strong {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 18px;
+    }
+
+    .drop-content span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    body.dragging::after {
+      content: "Drop your images anywhere";
+      position: fixed;
+      inset: 14px;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px dashed #a997ff;
+      border-radius: 24px;
+      background: rgba(7, 10, 17, 0.94);
+      color: #c5b8ff;
+      font-size: clamp(22px, 5vw, 38px);
+      font-weight: 800;
+      pointer-events: none;
+      backdrop-filter: blur(16px);
+    }
+
+    .selection-section {
+      display: none;
+      margin-top: 18px;
+    }
+
+    .selection-header,
+    .vault-header,
+    .folder-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .selection-header h2,
+    .vault-header h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .selection-count {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .selected-grid,
+    .image-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(auto-fill, minmax(160px, 1fr));
+      gap: 14px;
+    }
+
+    .selected-grid {
+      margin-top: 15px;
+    }
+
+    .selected-card,
+    .image-card {
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background:
+        linear-gradient(
+          145deg,
+          rgba(255, 255, 255, 0.045),
+          rgba(255, 255, 255, 0.012)
+        ),
+        var(--surface-2);
+      transition:
+        transform 0.2s ease,
+        border-color 0.2s ease;
+    }
+
+    .selected-card:hover,
+    .image-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--border-strong);
+    }
+
+    .square-preview,
+    .saved-image-box {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      overflow: hidden;
+      border-radius: 12px;
+      background:
+        linear-gradient(
+          135deg,
+          #1a2231,
+          #111722
+        );
+    }
+
+    .square-preview img,
+    .saved-image-box img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    .preview-remove {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 50%;
+      background: rgba(7, 10, 17, 0.75);
+      color: white;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+    }
+
+    .rename-input {
+      width: 100%;
+      margin-top: 9px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      outline: none;
+      background: #0c111b;
+      color: var(--text);
+      font-size: 12px;
+      transition: border-color 0.2s ease;
+    }
+
+    .rename-input:focus {
+      border-color: var(--primary);
+    }
+
+    .invalid-card {
+      border-color: rgba(224, 82, 99, 0.55);
+    }
+
+    .invalid-message {
+      margin-top: 7px;
+      color: #ff8492;
+      font-size: 11px;
+    }
+
+    .actions-row {
+      display: flex;
+      gap: 9px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      min-height: 40px;
+      padding: 9px 15px;
+      border-radius: 11px;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+      transition:
+        transform 0.18s ease,
+        background 0.18s ease,
+        opacity 0.18s ease;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      opacity: 0.48;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background:
+        linear-gradient(
+          135deg,
+          #7354f5,
+          #947aff
+        );
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background:
+        linear-gradient(
+          135deg,
+          #8265ff,
+          #a18aff
+        );
+    }
+
+    .btn-secondary {
+      background: #283246;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #354158;
+    }
+
+    .btn-green {
+      background: var(--green);
+    }
+
+    .btn-green:hover:not(:disabled) {
+      background: var(--green-hover);
+    }
+
+    .btn-red {
+      background: var(--red);
+    }
+
+    .btn-red:hover:not(:disabled) {
+      background: var(--red-hover);
+    }
+
+    .btn-small {
+      min-height: 34px;
+      padding: 7px 10px;
+      border-radius: 9px;
+      font-size: 12px;
+    }
+
+    .status {
+      min-height: 24px;
+      margin: 16px 4px 0;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .status.success {
+      color: #58d99b;
+    }
+
+    .status.error {
+      color: #ff7f8e;
+    }
+
+    .progress-wrap {
+      display: none;
+      margin-top: 14px;
+    }
+
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .progress-track {
+      height: 7px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: #222a38;
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background:
+        linear-gradient(
+          90deg,
+          #7354f5,
+          #2ebeff
+        );
+      transition: width 0.25s ease;
+    }
+
+    .vault-section {
+      margin-top: 30px;
+    }
+
+    .vault-header {
+      margin-bottom: 15px;
+    }
+
+    .folder-list {
+      display: grid;
+      gap: 18px;
+    }
+
+    .date-folder {
+      padding: 15px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background:
+        linear-gradient(
+          145deg,
+          rgba(255, 255, 255, 0.042),
+          rgba(255, 255, 255, 0.012)
+        ),
+        var(--surface);
+      box-shadow: 0 16px 45px rgba(0, 0, 0, 0.24);
+    }
+
+    .folder-header {
+      margin-bottom: 14px;
+    }
+
+    .folder-title-block {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .folder-icon {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      background: rgba(124, 92, 255, 0.14);
+      color: #c5b8ff;
+      font-weight: 800;
+    }
+
+    .folder-title {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    .folder-count {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .folder-actions {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    .file-name {
+      min-height: 34px;
+      margin-top: 8px;
+      color: #cfd6e2;
+      font-size: 11px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .card-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-top: 8px;
+    }
+
+    .loading-box,
+    .error-box,
+    .waiting-box {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .error-box {
+      color: #ff8492;
+    }
+
+    .empty-message,
+    .load-message {
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+      color: var(--muted);
+      text-align: center;
+    }
+
+    #loadMoreSentinel {
+      min-height: 80px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(255, 255, 255, 0.12);
+      border-top-color: #9f88ff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (max-width: 650px) {
+      .page-shell {
+        width: min(100% - 20px, 1180px);
+        padding-top: 22px;
+      }
+
+      .top-bar {
+        flex-direction: column;
+      }
+
+      .security-badge {
+        align-self: flex-start;
+      }
+
+      .upload-panel {
+        padding: 14px;
+        border-radius: 18px;
+      }
+
+      .drop-area {
+        min-height: 135px;
+      }
+
+      .selected-grid,
+      .image-grid {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .folder-actions {
+        width: 100%;
+      }
+
+      .folder-actions button {
+        flex: 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <main class="page-shell">
+
+    <header class="top-bar">
+
+      <div class="brand-block">
+        <h1>Encrypted Image Vault</h1>
+
+        <p>
+          Encrypt screenshots with AES-256-GCM, upload encrypted
+          files to ImageKit, and organize them in Supabase by date.
+        </p>
+      </div>
+
+      <div class="security-badge">
+        AES-256-GCM
+      </div>
+
+    </header>
+
+
+    <section class="panel upload-panel">
+
+      <div
+        class="drop-area"
+        id="dropArea"
+      >
+        <div class="drop-content">
+          <strong>Select multiple images</strong>
+
+          <span>
+            Click here or drag and drop images anywhere
+          </span>
+        </div>
+      </div>
+
+      <input
+        type="file"
+        id="fileInput"
+        accept="image/*"
+        multiple
+      >
+
+
+      <div
+        class="selection-section"
+        id="selectionSection"
+      >
+
+        <div class="selection-header">
+          <h2>Selected images</h2>
+
+          <div
+            class="selection-count"
+            id="selectionCount"
+          ></div>
+        </div>
+
+        <div
+          class="selected-grid"
+          id="selectedGrid"
+        ></div>
+
+        <div class="actions-row">
+
+          <button
+            class="btn btn-primary"
+            id="uploadAllButton"
+          >
+            Encrypt and Upload All
+          </button>
+
+          <button
+            class="btn btn-secondary"
+            id="clearAllButton"
+          >
+            Clear All
+          </button>
+
+        </div>
+
+        <div
+          class="progress-wrap"
+          id="progressWrap"
+        >
+          <div class="progress-info">
+            <span id="progressText">
+              Preparing...
+            </span>
+
+            <span id="progressPercent">
+              0%
+            </span>
+          </div>
+
+          <div class="progress-track">
+            <div
+              class="progress-bar"
+              id="progressBar"
+            ></div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <div
+      class="status"
+      id="status"
+    ></div>
+
+
+    <section class="vault-section">
+
+      <div class="vault-header">
+        <h2>Saved date folders</h2>
+
+        <button
+          class="btn btn-secondary btn-small"
+          id="refreshButton"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div
+        class="folder-list"
+        id="folderList"
+      ></div>
+
+      <div id="loadMoreSentinel">
+        <div
+          class="spinner"
+          id="bottomSpinner"
+        ></div>
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <script>
+    /*
+      ==================================================
+      CONFIGURATION
+      ==================================================
+
+      This is a browser-only test page.
+
+      The ImageKit private key and encryption password
+      remain visible in the HTML source.
+    */
+
+    
+const imagekitdata = {
+      publicKey: "public_QjNtL3IoHoQMSSd54ON9jnjUYdk=",
+      privateKey: "private_2Hq3NSRC/U+pSE7VIw9qC6KMkhM=",
+      urlEndpoint: "https://ik.imagekit.io/e6cipwcpz",
+      folder: "/encrypted-images",
+      useUniqueFileName: false 
+    };
+    const supabasedata = {
+      supabaseUrl: "https://gppfaxctfuwdpjimobrh.supabase.co",
+      supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwcGZheGN0ZnV3ZHBqaW1vYnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMDc3NjEsImV4cCI6MjA5Njg4Mzc2MX0.CbkeAw5LQZSmD9mfMmw44YwW3LarJrrXO4cI_kPHXyw",
+      tableName: "ayueyu",
+  folderDateColumn: "folder-date",
+  urlJsonColumn: "url_json",
+  urlDataColumn: "url_data",
+  foldersPerPage: 3
+    };
+
+    const encryptionPassword =
+      "a1aa2aaa3aaaa4aa";
+
+
+    const encryptionConfig = {
+      iterations: 250000,
+      saltLength: 16,
+      ivLength: 12
+    };
+
+
+    const supabaseClient =
+      window.supabase.createClient(
+        supabasedata.supabaseUrl,
+        supabasedata.supabaseAnonKey
+      );
+
+
+    /*
+      ==================================================
+      ELEMENTS
+      ==================================================
+    */
+
+    const dropArea =
+      document.getElementById("dropArea");
+
+    const fileInput =
+      document.getElementById("fileInput");
+
+    const selectionSection =
+      document.getElementById("selectionSection");
+
+    const selectedGrid =
+      document.getElementById("selectedGrid");
+
+    const selectionCount =
+      document.getElementById("selectionCount");
+
+    const uploadAllButton =
+      document.getElementById("uploadAllButton");
+
+    const clearAllButton =
+      document.getElementById("clearAllButton");
+
+    const progressWrap =
+      document.getElementById("progressWrap");
+
+    const progressText =
+      document.getElementById("progressText");
+
+    const progressPercent =
+      document.getElementById("progressPercent");
+
+    const progressBar =
+      document.getElementById("progressBar");
+
+    const statusElement =
+      document.getElementById("status");
+
+    const refreshButton =
+      document.getElementById("refreshButton");
+
+    const folderList =
+      document.getElementById("folderList");
+
+    const loadMoreSentinel =
+      document.getElementById("loadMoreSentinel");
+
+    const bottomSpinner =
+      document.getElementById("bottomSpinner");
+
+
+    /*
+      ==================================================
+      STATE
+      ==================================================
+    */
+
+    let selectedItems = [];
+
+    let dragCounter = 0;
+
+    let currentFolderPage = 0;
+
+    let loadingFolders = false;
+
+    let hasMoreFolders = true;
+
+    let currentLoadGeneration = 0;
+
+
+    const decryptedFileCache =
+      new Map();
+
+
+    const activeObjectUrls =
+      new Set();
+
+
+    /*
+      ==================================================
+      LAZY OBSERVERS
+      ==================================================
+    */
+
+    const thumbnailObserver =
+      new IntersectionObserver(
+        handleThumbnailIntersection,
+        {
+          root: null,
+          rootMargin: "350px 0px",
+          threshold: 0.01
+        }
+      );
+
+
+    const folderPaginationObserver =
+      new IntersectionObserver(
+        function (entries) {
+          const entry =
+            entries[0];
+
+          if (
+            entry.isIntersecting &&
+            hasMoreFolders &&
+            !loadingFolders
+          ) {
+            loadNextFolderPage();
+          }
+        },
+        {
+          root: null,
+          rootMargin: "500px 0px",
+          threshold: 0
+        }
+      );
+
+
+    folderPaginationObserver.observe(
+      loadMoreSentinel
+    );
+
+
+    /*
+      ==================================================
+      FILE SELECTION
+      ==================================================
+    */
+
+    dropArea.addEventListener(
+      "click",
+      function () {
+        fileInput.click();
+      }
+    );
+
+
+    fileInput.addEventListener(
+      "change",
+      function () {
+        addSelectedFiles(
+          Array.from(
+            fileInput.files || []
+          )
+        );
+
+        fileInput.value = "";
+      }
+    );
+
+
+    window.addEventListener(
+      "dragenter",
+      function (event) {
+        event.preventDefault();
+
+        if (!hasDraggedFiles(event)) {
+          return;
+        }
+
+        dragCounter++;
+
+        document.body.classList.add(
+          "dragging"
+        );
+
+        dropArea.classList.add(
+          "active"
+        );
+      }
+    );
+
+
+    window.addEventListener(
+      "dragover",
+      function (event) {
+        event.preventDefault();
+
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect =
+            "copy";
+        }
+      }
+    );
+
+
+    window.addEventListener(
+      "dragleave",
+      function (event) {
+        event.preventDefault();
+
+        dragCounter--;
+
+        if (dragCounter <= 0) {
+          removeDragState();
+        }
+      }
+    );
+
+
+    window.addEventListener(
+      "drop",
+      function (event) {
+        event.preventDefault();
+
+        removeDragState();
+
+        addSelectedFiles(
+          Array.from(
+            event.dataTransfer.files || []
+          )
+        );
+      }
+    );
+
+
+    uploadAllButton.addEventListener(
+      "click",
+      uploadAllSelectedImages
+    );
+
+
+    clearAllButton.addEventListener(
+      "click",
+      function () {
+        clearAllSelected(true);
+      }
+    );
+
+
+    refreshButton.addEventListener(
+      "click",
+      resetAndLoadFolders
+    );
+
+
+    function addSelectedFiles(files) {
+      clearStatus();
+
+      const imageFiles =
+        files.filter(function (file) {
+          return file.type.startsWith(
+            "image/"
+          );
+        });
+
+
+      if (imageFiles.length === 0) {
+        showStatus(
+          "No valid image files were selected.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      for (const file of imageFiles) {
+        const renameResult =
+          createScreenshotName(
+            file.name
+          );
+
+        const previewUrl =
+          URL.createObjectURL(file);
+
+        activeObjectUrls.add(
+          previewUrl
+        );
+
+        selectedItems.push({
+          id: createLocalItemId(),
+          file: file,
+          previewUrl: previewUrl,
+          valid: renameResult.detected,
+          folderDate:
+            renameResult.detected
+              ? Number(
+                  renameResult.folderDate
+                )
+              : null,
+          renamedName:
+            renameResult.detected
+              ? renameResult.fileName
+              : file.name,
+          error:
+            renameResult.detected
+              ? ""
+              : "Date/time not detected"
+        });
+      }
+
+
+      renderSelectedItems();
+    }
+
+
+    function renderSelectedItems() {
+      selectedGrid.innerHTML = "";
+
+      selectionSection.style.display =
+        selectedItems.length > 0
+          ? "block"
+          : "none";
+
+      selectionCount.textContent =
+        selectedItems.length +
+        (
+          selectedItems.length === 1
+            ? " image"
+            : " images"
+        );
+
+
+      for (const item of selectedItems) {
+        const card =
+          document.createElement("article");
+
+        card.className =
+          "selected-card";
+
+        if (!item.valid) {
+          card.classList.add(
+            "invalid-card"
+          );
+        }
+
+
+        const previewBox =
+          document.createElement("div");
+
+        previewBox.className =
+          "square-preview";
+
+
+        const image =
+          document.createElement("img");
+
+        image.src =
+          item.previewUrl;
+
+        image.alt =
+          item.file.name;
+
+
+        const removeButton =
+          document.createElement("button");
+
+        removeButton.className =
+          "preview-remove";
+
+        removeButton.type =
+          "button";
+
+        removeButton.textContent =
+          "×";
+
+        removeButton.title =
+          "Remove image";
+
+        removeButton.addEventListener(
+          "click",
+          function () {
+            removeSelectedItem(
+              item.id
+            );
+          }
+        );
+
+
+        previewBox.appendChild(image);
+        previewBox.appendChild(
+          removeButton
+        );
+
+
+        const renameInput =
+          document.createElement("input");
+
+        renameInput.className =
+          "rename-input";
+
+        renameInput.type =
+          "text";
+
+        renameInput.value =
+          item.renamedName;
+
+        renameInput.disabled =
+          !item.valid;
+
+        renameInput.addEventListener(
+          "change",
+          function () {
+            item.renamedName =
+              sanitizeFileName(
+                renameInput.value
+              );
+
+            renameInput.value =
+              item.renamedName;
+          }
+        );
+
+
+        card.appendChild(
+          previewBox
+        );
+
+        card.appendChild(
+          renameInput
+        );
+
+
+        if (!item.valid) {
+          const errorText =
+            document.createElement("div");
+
+          errorText.className =
+            "invalid-message";
+
+          errorText.textContent =
+            "Filename must contain YYYYMMDD_HHMMSS.";
+
+          card.appendChild(
+            errorText
+          );
+        }
+
+
+        selectedGrid.appendChild(
+          card
+        );
+      }
+
+
+      const validCount =
+        selectedItems.filter(
+          function (item) {
+            return item.valid;
+          }
+        ).length;
+
+
+      uploadAllButton.disabled =
+        validCount === 0;
+    }
+
+
+    function removeSelectedItem(
+      itemId
+    ) {
+      const itemIndex =
+        selectedItems.findIndex(
+          function (item) {
+            return item.id === itemId;
+          }
+        );
+
+      if (itemIndex === -1) {
+        return;
+      }
+
+
+      const item =
+        selectedItems[itemIndex];
+
+      revokeTrackedObjectUrl(
+        item.previewUrl
+      );
+
+      selectedItems.splice(
+        itemIndex,
+        1
+      );
+
+      renderSelectedItems();
+    }
+
+
+    function clearAllSelected(
+      clearMessage = true
+    ) {
+      for (const item of selectedItems) {
+        revokeTrackedObjectUrl(
+          item.previewUrl
+        );
+      }
+
+      selectedItems = [];
+
+      renderSelectedItems();
+
+      hideProgress();
+
+      if (clearMessage) {
+        clearStatus();
+      }
+    }
+
+
+    /*
+      ==================================================
+      MULTIPLE UPLOAD FLOW
+      ==================================================
+    */
+
+    async function uploadAllSelectedImages() {
+      const validItems =
+        selectedItems.filter(
+          function (item) {
+            return item.valid;
+          }
+        );
+
+
+      if (validItems.length === 0) {
+        showStatus(
+          "No valid images are available.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      if (!validateSettings()) {
+        return;
+      }
+
+
+      setUploadState(true);
+
+      showProgress();
+
+      let successCount = 0;
+
+      let failureCount = 0;
+
+      const successfullyUploadedIds =
+        new Set();
+
+
+      try {
+        for (
+          let index = 0;
+          index < validItems.length;
+          index++
+        ) {
+          const item =
+            validItems[index];
+
+          const currentNumber =
+            index + 1;
+
+
+          updateProgress(
+            index,
+            validItems.length,
+            "Processing " +
+            currentNumber +
+            " of " +
+            validItems.length
+          );
+
+
+          try {
+            await processSingleSelectedItem(
+              item
+            );
+
+            successCount++;
+
+            successfullyUploadedIds.add(
+              item.id
+            );
+
+          } catch (error) {
+            failureCount++;
+
+            console.error(
+              "Upload failed:",
+              item.file.name,
+              error
+            );
+          }
+
+
+          updateProgress(
+            currentNumber,
+            validItems.length,
+            "Processed " +
+            currentNumber +
+            " of " +
+            validItems.length
+          );
+        }
+
+
+        selectedItems =
+          selectedItems.filter(
+            function (item) {
+              if (
+                successfullyUploadedIds.has(
+                  item.id
+                )
+              ) {
+                revokeTrackedObjectUrl(
+                  item.previewUrl
+                );
+
+                return false;
+              }
+
+              return true;
+            }
+          );
+
+
+        renderSelectedItems();
+
+
+        if (failureCount === 0) {
+          showStatus(
+            successCount +
+            " images uploaded and saved successfully.",
+            "success"
+          );
+        } else {
+          showStatus(
+            successCount +
+            " uploaded, " +
+            failureCount +
+            " failed.",
+            "error"
+          );
+        }
+
+
+        await resetAndLoadFolders();
+
+      } finally {
+        setUploadState(false);
+
+        setTimeout(
+          hideProgress,
+          700
+        );
+      }
+    }
+
+
+    async function processSingleSelectedItem(
+      item
+    ) {
+      const finalImageName =
+        sanitizeFileName(
+          item.renamedName
+        );
+
+      const binFileName =
+        createBinFileName(
+          finalImageName
+        );
+
+
+      const encryptedBlob =
+        await encryptImageFile(
+          item.file,
+          finalImageName,
+          encryptionPassword
+        );
+
+
+      const encryptedFile =
+        new File(
+          [encryptedBlob],
+          binFileName,
+          {
+            type:
+              "application/octet-stream"
+          }
+        );
+
+
+      const uploadedResult =
+        await uploadToImageKit(
+          encryptedFile
+        );
+
+
+      const uniqueKey =
+        createUniqueKey();
+
+
+      const deletionData = {
+        fileId:
+          uploadedResult.fileId,
+
+        name:
+          uploadedResult.name ||
+          binFileName,
+
+        filePath:
+          uploadedResult.filePath ||
+          "",
+
+        url:
+          uploadedResult.url,
+
+        folderDate:
+          item.folderDate,
+
+        uniqueKey:
+          uniqueKey,
+
+        originalImageName:
+          finalImageName,
+
+        encryptedFileName:
+          binFileName,
+
+        originalMimeType:
+          item.file.type ||
+          "application/octet-stream",
+
+        createdAt:
+          new Date().toISOString()
+      };
+
+
+      try {
+        await addFileToSupabaseRow(
+          item.folderDate,
+          uniqueKey,
+          uploadedResult.url,
+          deletionData
+        );
+
+      } catch (error) {
+        try {
+          await deleteImageKitFile(
+            uploadedResult.fileId
+          );
+        } catch (rollbackError) {
+          console.error(
+            "Rollback failed:",
+            rollbackError
+          );
+        }
+
+        throw error;
+      }
+    }
+
+
+    /*
+      ==================================================
+      SUPABASE PAGINATION
+      ==================================================
+    */
+
+    async function resetAndLoadFolders() {
+      currentLoadGeneration++;
+
+      const generation =
+        currentLoadGeneration;
+
+      currentFolderPage = 0;
+
+      hasMoreFolders = true;
+
+      loadingFolders = false;
+
+      folderList.innerHTML = "";
+
+      decryptedFileCache.clear();
+
+      thumbnailObserver.disconnect();
+
+      bottomSpinner.style.display =
+        "block";
+
+      await loadNextFolderPage(
+        generation
+      );
+    }
+
+
+    async function loadNextFolderPage(
+      generation = currentLoadGeneration
+    ) {
+      if (
+        loadingFolders ||
+        !hasMoreFolders
+      ) {
+        return;
+      }
+
+
+      loadingFolders = true;
+
+      bottomSpinner.style.display =
+        "block";
+
+
+      const pageSize =
+        supabasedata.foldersPerPage;
+
+      const from =
+        currentFolderPage *
+        pageSize;
+
+      const to =
+        from +
+        pageSize -
+        1;
+
+
+      try {
+        const {
+          data,
+          error
+        } = await supabaseClient
+          .from(
+            supabasedata.tableName
+          )
+          .select(
+            [
+              supabasedata.folderDateColumn,
+              supabasedata.urlJsonColumn,
+              supabasedata.urlDataColumn
+            ].join(",")
+          )
+          .order(
+            supabasedata.folderDateColumn,
+            {
+              ascending: false
+            }
+          )
+          .range(
+            from,
+            to
+          );
+
+
+        if (generation !== currentLoadGeneration) {
+          return;
+        }
+
+
+        if (error) {
+          throw error;
+        }
+
+
+        const rows =
+          data || [];
+
+
+        if (
+          rows.length <
+          pageSize
+        ) {
+          hasMoreFolders =
+            false;
+        }
+
+
+        if (
+          rows.length === 0 &&
+          currentFolderPage === 0
+        ) {
+          folderList.innerHTML =
+            '<div class="empty-message">No saved images.</div>';
+        }
+
+
+        appendFolderRows(
+          rows
+        );
+
+
+        currentFolderPage++;
+
+
+      } catch (error) {
+        console.error(error);
+
+        if (
+          currentFolderPage === 0
+        ) {
+          folderList.innerHTML =
+            '<div class="empty-message">Could not load saved folders.</div>';
+        }
+
+        showStatus(
+          "Supabase error: " +
+          error.message,
+          "error"
+        );
+
+        hasMoreFolders =
+          false;
+
+      } finally {
+        loadingFolders =
+          false;
+
+        bottomSpinner.style.display =
+          hasMoreFolders
+            ? "block"
+            : "none";
+
+        if (!hasMoreFolders) {
+          loadMoreSentinel.textContent =
+            folderList.children.length > 0
+              ? "All folders loaded"
+              : "";
+        }
+      }
+    }
+
+
+    function appendFolderRows(
+      rows
+    ) {
+      for (const row of rows) {
+        const folderDate =
+          row[
+            supabasedata.folderDateColumn
+          ];
+
+        const urlJson =
+          normalizeJsonObject(
+            row[
+              supabasedata.urlJsonColumn
+            ]
+          );
+
+        const urlData =
+          normalizeJsonObject(
+            row[
+              supabasedata.urlDataColumn
+            ]
+          );
+
+        const uniqueKeys =
+          Object.keys(
+            urlJson
+          );
+
+
+        if (
+          uniqueKeys.length === 0
+        ) {
+          continue;
+        }
+
+
+        const folder =
+          createDateFolder(
+            folderDate,
+            uniqueKeys,
+            urlJson,
+            urlData
+          );
+
+
+        folderList.appendChild(
+          folder
+        );
+      }
+    }
+
+
+    function createDateFolder(
+      folderDate,
+      uniqueKeys,
+      urlJson,
+      urlData
+    ) {
+      const folder =
+        document.createElement(
+          "section"
+        );
+
+      folder.className =
+        "date-folder";
+
+
+      const header =
+        document.createElement(
+          "div"
+        );
+
+      header.className =
+        "folder-header";
+
+
+      const titleBlock =
+        document.createElement(
+          "div"
+        );
+
+      titleBlock.className =
+        "folder-title-block";
+
+
+      const icon =
+        document.createElement(
+          "div"
+        );
+
+      icon.className =
+        "folder-icon";
+
+      icon.textContent =
+        String(folderDate)
+          .slice(-2);
+
+
+      const titleTextBlock =
+        document.createElement(
+          "div"
+        );
+
+
+      const title =
+        document.createElement(
+          "h3"
+        );
+
+      title.className =
+        "folder-title";
+
+      title.textContent =
+        formatFolderDate(
+          folderDate
+        );
+
+
+      const count =
+        document.createElement(
+          "div"
+        );
+
+      count.className =
+        "folder-count";
+
+      count.textContent =
+        uniqueKeys.length +
+        (
+          uniqueKeys.length === 1
+            ? " encrypted image"
+            : " encrypted images"
+        );
+
+
+      titleTextBlock.appendChild(
+        title
+      );
+
+      titleTextBlock.appendChild(
+        count
+      );
+
+      titleBlock.appendChild(
+        icon
+      );
+
+      titleBlock.appendChild(
+        titleTextBlock
+      );
+
+
+      const folderActions =
+        document.createElement(
+          "div"
+        );
+
+      folderActions.className =
+        "folder-actions";
+
+
+      const downloadAllButton =
+        document.createElement(
+          "button"
+        );
+
+      downloadAllButton.className =
+        "btn btn-green btn-small";
+
+      downloadAllButton.textContent =
+        "Download All";
+
+      downloadAllButton.addEventListener(
+        "click",
+        async function () {
+          await downloadDateFolder(
+            folderDate,
+            uniqueKeys,
+            urlJson,
+            urlData,
+            downloadAllButton
+          );
+        }
+      );
+
+
+      const deleteAllButton =
+        document.createElement(
+          "button"
+        );
+
+      deleteAllButton.className =
+        "btn btn-red btn-small";
+
+      deleteAllButton.textContent =
+        "Delete All";
+
+      deleteAllButton.addEventListener(
+        "click",
+        async function () {
+          await deleteDateFolder(
+            folderDate,
+            deleteAllButton
+          );
+        }
+      );
+
+
+      folderActions.appendChild(
+        downloadAllButton
+      );
+
+      folderActions.appendChild(
+        deleteAllButton
+      );
+
+      header.appendChild(
+        titleBlock
+      );
+
+      header.appendChild(
+        folderActions
+      );
+
+
+      const grid =
+        document.createElement(
+          "div"
+        );
+
+      grid.className =
+        "image-grid";
+
+
+      for (const uniqueKey of uniqueKeys) {
+        const fileUrl =
+          urlJson[uniqueKey];
+
+        const deletionData =
+          normalizeJsonObject(
+            urlData[uniqueKey]
+          );
+
+        const card =
+          createSavedImageCard(
+            folderDate,
+            uniqueKey,
+            fileUrl,
+            deletionData
+          );
+
+        grid.appendChild(
+          card
+        );
+      }
+
+
+      folder.appendChild(
+        header
+      );
+
+      folder.appendChild(
+        grid
+      );
+
+      return folder;
+    }
+
+
+    /*
+      ==================================================
+      SAVED IMAGE CARDS
+      ==================================================
+    */
+
+    function createSavedImageCard(
+      folderDate,
+      uniqueKey,
+      fileUrl,
+      deletionData
+    ) {
+      const card =
+        document.createElement(
+          "article"
+        );
+
+      card.className =
+        "image-card";
+
+
+      const imageBox =
+        document.createElement(
+          "div"
+        );
+
+      imageBox.className =
+        "saved-image-box";
+
+      imageBox.innerHTML =
+        '<div class="waiting-box">Waiting to load...</div>';
+
+
+      imageBox.dataset.uniqueKey =
+        uniqueKey;
+
+      imageBox.dataset.fileUrl =
+        fileUrl;
+
+      imageBox._deletionData =
+        deletionData;
+
+      imageBox._loaded =
+        false;
+
+
+      thumbnailObserver.observe(
+        imageBox
+      );
+
+
+      const fileName =
+        document.createElement(
+          "div"
+        );
+
+      fileName.className =
+        "file-name";
+
+      fileName.textContent =
+        getOriginalFileName(
+          deletionData
+        );
+
+
+      const actions =
+        document.createElement(
+          "div"
+        );
+
+      actions.className =
+        "card-actions";
+
+
+      const deleteButton =
+        document.createElement(
+          "button"
+        );
+
+      deleteButton.className =
+        "btn btn-red btn-small";
+
+      deleteButton.textContent =
+        "Delete";
+
+      deleteButton.addEventListener(
+        "click",
+        async function () {
+          deleteButton.disabled =
+            true;
+
+          try {
+            await deleteSavedFile(
+              folderDate,
+              uniqueKey
+            );
+          } finally {
+            deleteButton.disabled =
+              false;
+          }
+        }
+      );
+
+
+      const downloadButton =
+        document.createElement(
+          "button"
+        );
+
+      downloadButton.className =
+        "btn btn-green btn-small";
+
+      downloadButton.textContent =
+        "Download";
+
+      downloadButton.addEventListener(
+        "click",
+        async function () {
+          await downloadSingleImage(
+            uniqueKey,
+            fileUrl,
+            deletionData,
+            downloadButton
+          );
+        }
+      );
+
+
+      actions.appendChild(
+        deleteButton
+      );
+
+      actions.appendChild(
+        downloadButton
+      );
+
+      card.appendChild(
+        imageBox
+      );
+
+      card.appendChild(
+        fileName
+      );
+
+      card.appendChild(
+        actions
+      );
+
+      return card;
+    }
+
+
+    function handleThumbnailIntersection(
+      entries
+    ) {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) {
+          continue;
+        }
+
+        const imageBox =
+          entry.target;
+
+        thumbnailObserver.unobserve(
+          imageBox
+        );
+
+        if (imageBox._loaded) {
+          continue;
+        }
+
+        imageBox._loaded =
+          true;
+
+        loadLazyThumbnail(
+          imageBox
+        );
+      }
+    }
+
+
+    async function loadLazyThumbnail(
+      imageBox
+    ) {
+      imageBox.innerHTML =
+        '<div class="loading-box"><div class="spinner"></div></div>';
+
+
+      const uniqueKey =
+        imageBox.dataset.uniqueKey;
+
+      const fileUrl =
+        imageBox.dataset.fileUrl;
+
+      const deletionData =
+        imageBox._deletionData;
+
+
+      try {
+        const decryptedResult =
+          await getDecryptedFile(
+            uniqueKey,
+            fileUrl,
+            deletionData
+          );
+
+        const objectUrl =
+          URL.createObjectURL(
+            decryptedResult.blob
+          );
+
+        activeObjectUrls.add(
+          objectUrl
+        );
+
+
+        imageBox.innerHTML = "";
+
+
+        const image =
+          document.createElement(
+            "img"
+          );
+
+        image.src =
+          objectUrl;
+
+        image.alt =
+          decryptedResult.name;
+
+
+        imageBox.appendChild(
+          image
+        );
+
+      } catch (error) {
+        console.error(error);
+
+        imageBox.innerHTML =
+          '<div class="error-box">Could not decrypt image</div>';
+      }
+    }
+
+
+    async function getDecryptedFile(
+      uniqueKey,
+      fileUrl,
+      deletionData
+    ) {
+      if (
+        decryptedFileCache.has(
+          uniqueKey
+        )
+      ) {
+        return decryptedFileCache.get(
+          uniqueKey
+        );
+      }
+
+
+      const decryptedResult =
+        await fetchAndDecryptBin(
+          fileUrl
+        );
+
+
+      decryptedResult.name =
+        getOriginalFileName(
+          deletionData,
+          decryptedResult.name
+        );
+
+
+      decryptedFileCache.set(
+        uniqueKey,
+        decryptedResult
+      );
+
+
+      return decryptedResult;
+    }
+
+
+    /*
+      ==================================================
+      DOWNLOAD
+      ==================================================
+    */
+
+    async function downloadSingleImage(
+      uniqueKey,
+      fileUrl,
+      deletionData,
+      button
+    ) {
+      const oldText =
+        button.textContent;
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        "Preparing...";
+
+
+      try {
+        const decryptedResult =
+          await getDecryptedFile(
+            uniqueKey,
+            fileUrl,
+            deletionData
+          );
+
+        downloadBlob(
+          decryptedResult.blob,
+          decryptedResult.name
+        );
+
+      } catch (error) {
+        showStatus(
+          "Download error: " +
+          error.message,
+          "error"
+        );
+
+      } finally {
+        button.disabled =
+          false;
+
+        button.textContent =
+          oldText;
+      }
+    }
+
+
+    async function downloadDateFolder(
+      folderDate,
+      uniqueKeys,
+      urlJson,
+      urlData,
+      button
+    ) {
+      const oldText =
+        button.textContent;
+
+      button.disabled =
+        true;
+
+
+      let successCount = 0;
+
+      let failedCount = 0;
+
+
+      try {
+        for (
+          let index = 0;
+          index < uniqueKeys.length;
+          index++
+        ) {
+          const uniqueKey =
+            uniqueKeys[index];
+
+          button.textContent =
+            "Downloading " +
+            (index + 1) +
+            "/" +
+            uniqueKeys.length;
+
+
+          try {
+            const decryptedResult =
+              await getDecryptedFile(
+                uniqueKey,
+                urlJson[uniqueKey],
+                normalizeJsonObject(
+                  urlData[uniqueKey]
+                )
+              );
+
+            downloadBlob(
+              decryptedResult.blob,
+              decryptedResult.name
+            );
+
+            successCount++;
+
+            await delay(
+              450
+            );
+
+          } catch (error) {
+            console.error(error);
+
+            failedCount++;
+          }
+        }
+
+
+        if (failedCount === 0) {
+          showStatus(
+            successCount +
+            " images downloaded.",
+            "success"
+          );
+        } else {
+          showStatus(
+            successCount +
+            " downloaded and " +
+            failedCount +
+            " failed.",
+            "error"
+          );
+        }
+
+      } finally {
+        button.disabled =
+          false;
+
+        button.textContent =
+          oldText;
+      }
+    }
+
+
+    function downloadBlob(
+      blob,
+      fileName
+    ) {
+      const objectUrl =
+        URL.createObjectURL(
+          blob
+        );
+
+      const link =
+        document.createElement(
+          "a"
+        );
+
+      link.href =
+        objectUrl;
+
+      link.download =
+        sanitizeDownloadFileName(
+          fileName
+        );
+
+      link.style.display =
+        "none";
+
+      document.body.appendChild(
+        link
+      );
+
+      link.click();
+
+      link.remove();
+
+
+      setTimeout(
+        function () {
+          URL.revokeObjectURL(
+            objectUrl
+          );
+        },
+        4000
+      );
+    }
+
+
+    /*
+      ==================================================
+      DELETE
+      ==================================================
+    */
+
+    async function deleteSavedFile(
+      folderDate,
+      uniqueKey
+    ) {
+      const confirmed =
+        confirm(
+          "Delete this encrypted image from ImageKit and Supabase?"
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+
+      try {
+        showStatus(
+          "Deleting image..."
+        );
+
+
+        const row =
+          await getSupabaseDateRow(
+            folderDate
+          );
+
+
+        if (!row) {
+          throw new Error(
+            "Supabase row was not found."
+          );
+        }
+
+
+        const urlJson =
+          normalizeJsonObject(
+            row[
+              supabasedata.urlJsonColumn
+            ]
+          );
+
+        const urlData =
+          normalizeJsonObject(
+            row[
+              supabasedata.urlDataColumn
+            ]
+          );
+
+
+        const deletionData =
+          normalizeJsonObject(
+            urlData[uniqueKey]
+          );
+
+
+        if (!deletionData.fileId) {
+          throw new Error(
+            "ImageKit file ID is missing."
+          );
+        }
+
+
+        await deleteImageKitFile(
+          deletionData.fileId
+        );
+
+
+        delete urlJson[uniqueKey];
+
+        delete urlData[uniqueKey];
+
+        decryptedFileCache.delete(
+          uniqueKey
+        );
+
+
+        await saveUpdatedDateRow(
+          folderDate,
+          urlJson,
+          urlData
+        );
+
+
+        showStatus(
+          "Image deleted successfully.",
+          "success"
+        );
+
+
+        await resetAndLoadFolders();
+
+      } catch (error) {
+        showStatus(
+          "Delete error: " +
+          error.message,
+          "error"
+        );
+      }
+    }
+
+
+    async function deleteDateFolder(
+      folderDate,
+      button
+    ) {
+      const confirmed =
+        confirm(
+          "Delete every image inside " +
+          formatFolderDate(folderDate) +
+          "?"
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+
+      const oldText =
+        button.textContent;
+
+      button.disabled =
+        true;
+
+
+      try {
+        const row =
+          await getSupabaseDateRow(
+            folderDate
+          );
+
+
+        if (!row) {
+          throw new Error(
+            "Supabase row was not found."
+          );
+        }
+
+
+        const urlJson =
+          normalizeJsonObject(
+            row[
+              supabasedata.urlJsonColumn
+            ]
+          );
+
+        const urlData =
+          normalizeJsonObject(
+            row[
+              supabasedata.urlDataColumn
+            ]
+          );
+
+
+        const uniqueKeys =
+          Object.keys(
+            urlJson
+          );
+
+
+        let deletedCount = 0;
+
+        let failedCount = 0;
+
+
+        for (
+          let index = 0;
+          index < uniqueKeys.length;
+          index++
+        ) {
+          const uniqueKey =
+            uniqueKeys[index];
+
+          const deletionData =
+            normalizeJsonObject(
+              urlData[uniqueKey]
+            );
+
+
+          button.textContent =
+            "Deleting " +
+            (index + 1) +
+            "/" +
+            uniqueKeys.length;
+
+
+          try {
+            if (!deletionData.fileId) {
+              throw new Error(
+                "Missing file ID"
+              );
+            }
+
+
+            await deleteImageKitFile(
+              deletionData.fileId
+            );
+
+
+            delete urlJson[uniqueKey];
+
+            delete urlData[uniqueKey];
+
+            decryptedFileCache.delete(
+              uniqueKey
+            );
+
+            deletedCount++;
+
+          } catch (error) {
+            console.error(error);
+
+            failedCount++;
+          }
+        }
+
+
+        await saveUpdatedDateRow(
+          folderDate,
+          urlJson,
+          urlData
+        );
+
+
+        if (failedCount === 0) {
+          showStatus(
+            deletedCount +
+            " images deleted successfully.",
+            "success"
+          );
+        } else {
+          showStatus(
+            deletedCount +
+            " deleted and " +
+            failedCount +
+            " failed.",
+            "error"
+          );
+        }
+
+
+        await resetAndLoadFolders();
+
+      } finally {
+        button.disabled =
+          false;
+
+        button.textContent =
+          oldText;
+      }
+    }
+
+
+    async function saveUpdatedDateRow(
+      folderDate,
+      urlJson,
+      urlData
+    ) {
+      if (
+        Object.keys(urlJson).length === 0
+      ) {
+        const {
+          error
+        } = await supabaseClient
+          .from(
+            supabasedata.tableName
+          )
+          .delete()
+          .eq(
+            supabasedata.folderDateColumn,
+            folderDate
+          );
+
+
+        if (error) {
+          throw error;
+        }
+
+
+        return;
+      }
+
+
+      const updateData = {};
+
+      updateData[
+        supabasedata.urlJsonColumn
+      ] = urlJson;
+
+      updateData[
+        supabasedata.urlDataColumn
+      ] = urlData;
+
+
+      const {
+        error
+      } = await supabaseClient
+        .from(
+          supabasedata.tableName
+        )
+        .update(
+          updateData
+        )
+        .eq(
+          supabasedata.folderDateColumn,
+          folderDate
+        );
+
+
+      if (error) {
+        throw error;
+      }
+    }
+
+
+    /*
+      ==================================================
+      SUPABASE HELPERS
+      ==================================================
+    */
+
+    async function getSupabaseDateRow(
+      folderDate
+    ) {
+      const {
+        data,
+        error
+      } = await supabaseClient
+        .from(
+          supabasedata.tableName
+        )
+        .select(
+          [
+            supabasedata.folderDateColumn,
+            supabasedata.urlJsonColumn,
+            supabasedata.urlDataColumn
+          ].join(",")
+        )
+        .eq(
+          supabasedata.folderDateColumn,
+          folderDate
+        )
+        .maybeSingle();
+
+
+      if (error) {
+        throw error;
+      }
+
+
+      return data;
+    }
+
+
+    async function addFileToSupabaseRow(
+      folderDate,
+      uniqueKey,
+      fileUrl,
+      deletionData
+    ) {
+      const existingRow =
+        await getSupabaseDateRow(
+          folderDate
+        );
+
+
+      const urlJson =
+        normalizeJsonObject(
+          existingRow
+            ? existingRow[
+                supabasedata.urlJsonColumn
+              ]
+            : {}
+        );
+
+
+      const urlData =
+        normalizeJsonObject(
+          existingRow
+            ? existingRow[
+                supabasedata.urlDataColumn
+              ]
+            : {}
+        );
+
+
+      urlJson[uniqueKey] =
+        fileUrl;
+
+      urlData[uniqueKey] =
+        deletionData;
+
+
+      const rowData = {};
+
+      rowData[
+        supabasedata.folderDateColumn
+      ] = folderDate;
+
+      rowData[
+        supabasedata.urlJsonColumn
+      ] = urlJson;
+
+      rowData[
+        supabasedata.urlDataColumn
+      ] = urlData;
+
+
+      const {
+        error
+      } = await supabaseClient
+        .from(
+          supabasedata.tableName
+        )
+        .upsert(
+          rowData,
+          {
+            onConflict:
+              supabasedata.folderDateColumn
+          }
+        );
+
+
+      if (error) {
+        throw error;
+      }
+    }
+
+
+    /*
+      ==================================================
+      IMAGEKIT
+      ==================================================
+    */
+
+    async function uploadToImageKit(
+      file
+    ) {
+      const token =
+        createToken();
+
+
+      const expire =
+        Math.floor(
+          Date.now() / 1000
+        ) +
+        30 * 60;
+
+
+      const signature =
+        await createImageKitSignature(
+          token,
+          expire,
+          imagekitdata.privateKey
+        );
+
+
+      const formData =
+        new FormData();
+
+
+      formData.append(
+        "file",
+        file
+      );
+
+      formData.append(
+        "fileName",
+        file.name
+      );
+
+      formData.append(
+        "publicKey",
+        imagekitdata.publicKey
+      );
+
+      formData.append(
+        "token",
+        token
+      );
+
+      formData.append(
+        "expire",
+        String(expire)
+      );
+
+      formData.append(
+        "signature",
+        signature
+      );
+
+      formData.append(
+        "useUniqueFileName",
+        String(
+          imagekitdata.useUniqueFileName
+        )
+      );
+
+
+      if (imagekitdata.folder) {
+        formData.append(
+          "folder",
+          imagekitdata.folder
+        );
+      }
+
+
+      const response =
+        await fetch(
+          "https://upload.imagekit.io/api/v1/files/upload",
+          {
+            method:
+              "POST",
+
+            body:
+              formData
+          }
+        );
+
+
+      const result =
+        await readJsonResponse(
+          response
+        );
+
+
+      if (!response.ok) {
+        throw new Error(
+          result.message ||
+          result.error ||
+          "ImageKit upload failed."
+        );
+      }
+
+
+      if (
+        !result.fileId ||
+        !result.url
+      ) {
+        throw new Error(
+          "ImageKit did not return fileId or URL."
+        );
+      }
+
+
+      return result;
+    }
+
+
+    async function deleteImageKitFile(
+      fileId
+    ) {
+      const authorization =
+        "Basic " +
+        btoa(
+          imagekitdata.privateKey +
+          ":"
+        );
+
+
+      const response =
+        await fetch(
+          "https://api.imagekit.io/v1/files/" +
+          encodeURIComponent(
+            fileId
+          ),
+          {
+            method:
+              "DELETE",
+
+            headers: {
+              Authorization:
+                authorization
+            }
+          }
+        );
+
+
+      if (!response.ok) {
+        const result =
+          await readJsonResponse(
+            response
+          );
+
+        throw new Error(
+          result.message ||
+          result.error ||
+          "ImageKit deletion failed."
+        );
+      }
+    }
+
+
+    async function createImageKitSignature(
+      token,
+      expire,
+      privateKey
+    ) {
+      const encoder =
+        new TextEncoder();
+
+
+      const key =
+        await crypto.subtle.importKey(
+          "raw",
+          encoder.encode(
+            privateKey
+          ),
+          {
+            name:
+              "HMAC",
+
+            hash:
+              "SHA-1"
+          },
+          false,
+          ["sign"]
+        );
+
+
+      const signature =
+        await crypto.subtle.sign(
+          "HMAC",
+          key,
+          encoder.encode(
+            token + expire
+          )
+        );
+
+
+      return Array.from(
+        new Uint8Array(
+          signature
+        )
+      )
+        .map(function (byte) {
+          return byte
+            .toString(16)
+            .padStart(2, "0");
+        })
+        .join("");
+    }
+
+
+    /*
+      ==================================================
+      AES-256-GCM
+      ==================================================
+    */
+
+    async function encryptImageFile(
+      imageFile,
+      renamedFileName,
+      password
+    ) {
+      const imageBytes =
+        await imageFile.arrayBuffer();
+
+
+      const salt =
+        crypto.getRandomValues(
+          new Uint8Array(
+            encryptionConfig.saltLength
+          )
+        );
+
+
+      const iv =
+        crypto.getRandomValues(
+          new Uint8Array(
+            encryptionConfig.ivLength
+          )
+        );
+
+
+      const key =
+        await deriveEncryptionKey(
+          password,
+          salt,
+          encryptionConfig.iterations
+        );
+
+
+      const encryptedBytes =
+        await crypto.subtle.encrypt(
+          {
+            name:
+              "AES-GCM",
+
+            iv:
+              iv,
+
+            tagLength:
+              128
+          },
+          key,
+          imageBytes
+        );
+
+
+      const header = {
+        version:
+          1,
+
+        algorithm:
+          "AES-256-GCM",
+
+        keyDerivation:
+          "PBKDF2-SHA-256",
+
+        iterations:
+          encryptionConfig.iterations,
+
+        saltLength:
+          salt.length,
+
+        ivLength:
+          iv.length,
+
+        originalName:
+          renamedFileName,
+
+        mimeType:
+          imageFile.type ||
+          "application/octet-stream"
+      };
+
+
+      const encoder =
+        new TextEncoder();
+
+
+      const headerBytes =
+        encoder.encode(
+          JSON.stringify(
+            header
+          )
+        );
+
+
+      const headerLengthBytes =
+        new Uint8Array(4);
+
+
+      new DataView(
+        headerLengthBytes.buffer
+      ).setUint32(
+        0,
+        headerBytes.length,
+        false
+      );
+
+
+      return new Blob(
+        [
+          headerLengthBytes,
+          headerBytes,
+          salt,
+          iv,
+          new Uint8Array(
+            encryptedBytes
+          )
+        ],
+        {
+          type:
+            "application/octet-stream"
+        }
+      );
+    }
+
+
+    async function fetchAndDecryptBin(
+      fileUrl
+    ) {
+      const response =
+        await fetch(
+          addCacheBuster(
+            fileUrl
+          )
+        );
+
+
+      if (!response.ok) {
+        throw new Error(
+          "Could not load encrypted file."
+        );
+      }
+
+
+      const encryptedBuffer =
+        await response.arrayBuffer();
+
+
+      return decryptBinFile(
+        encryptedBuffer,
+        encryptionPassword
+      );
+    }
+
+
+    async function decryptBinFile(
+      encryptedArrayBuffer,
+      password
+    ) {
+      const bytes =
+        new Uint8Array(
+          encryptedArrayBuffer
+        );
+
+
+      if (bytes.length < 5) {
+        throw new Error(
+          "Invalid encrypted file."
+        );
+      }
+
+
+      const headerLength =
+        new DataView(
+          bytes.buffer,
+          bytes.byteOffset,
+          4
+        ).getUint32(
+          0,
+          false
+        );
+
+
+      if (
+        headerLength <= 0 ||
+        headerLength >
+          bytes.length - 4
+      ) {
+        throw new Error(
+          "Invalid encrypted header."
+        );
+      }
+
+
+      const headerStart =
+        4;
+
+
+      const headerEnd =
+        headerStart +
+        headerLength;
+
+
+      let header;
+
+
+      try {
+        header =
+          JSON.parse(
+            new TextDecoder().decode(
+              bytes.slice(
+                headerStart,
+                headerEnd
+              )
+            )
+          );
+      } catch {
+        throw new Error(
+          "Could not read encrypted metadata."
+        );
+      }
+
+
+      const saltStart =
+        headerEnd;
+
+
+      const saltEnd =
+        saltStart +
+        header.saltLength;
+
+
+      const ivStart =
+        saltEnd;
+
+
+      const ivEnd =
+        ivStart +
+        header.ivLength;
+
+
+      if (ivEnd >= bytes.length) {
+        throw new Error(
+          "Encrypted file is incomplete."
+        );
+      }
+
+
+      const salt =
+        bytes.slice(
+          saltStart,
+          saltEnd
+        );
+
+
+      const iv =
+        bytes.slice(
+          ivStart,
+          ivEnd
+        );
+
+
+      const encryptedContent =
+        bytes.slice(
+          ivEnd
+        );
+
+
+      const key =
+        await deriveEncryptionKey(
+          password,
+          salt,
+          header.iterations
+        );
+
+
+      let decryptedBytes;
+
+
+      try {
+        decryptedBytes =
+          await crypto.subtle.decrypt(
+            {
+              name:
+                "AES-GCM",
+
+              iv:
+                iv,
+
+              tagLength:
+                128
+            },
+            key,
+            encryptedContent
+          );
+      } catch {
+        throw new Error(
+          "Decryption failed."
+        );
+      }
+
+
+      const mimeType =
+        header.mimeType ||
+        "application/octet-stream";
+
+
+      return {
+        name:
+          header.originalName ||
+          "image",
+
+        blob:
+          new Blob(
+            [decryptedBytes],
+            {
+              type:
+                mimeType
+            }
+          )
+      };
+    }
+
+
+    async function deriveEncryptionKey(
+      password,
+      salt,
+      iterations
+    ) {
+      const encoder =
+        new TextEncoder();
+
+
+      const passwordKey =
+        await crypto.subtle.importKey(
+          "raw",
+          encoder.encode(
+            password
+          ),
+          "PBKDF2",
+          false,
+          ["deriveKey"]
+        );
+
+
+      return crypto.subtle.deriveKey(
+        {
+          name:
+            "PBKDF2",
+
+          salt:
+            salt,
+
+          iterations:
+            iterations,
+
+          hash:
+            "SHA-256"
+        },
+        passwordKey,
+        {
+          name:
+            "AES-GCM",
+
+          length:
+            256
+        },
+        false,
+        [
+          "encrypt",
+          "decrypt"
+        ]
+      );
+    }
+
+
+    /*
+      ==================================================
+      FILENAME DETECTION
+      ==================================================
+    */
+
+    function createScreenshotName(
+      fileName
+    ) {
+      const extension =
+        getFileExtension(
+          fileName
+        );
+
+
+      let baseName =
+        removeFileExtension(
+          fileName
+        );
+
+
+      baseName =
+        baseName
+          .replace(/\[/g, "")
+          .replace(/\]/g, "");
+
+
+      const match =
+        baseName.match(
+          /(?:^|[^0-9])(\d{8})[_-]?(\d{6})(?:[^0-9]|$)/
+        );
+
+
+      if (!match) {
+        return {
+          detected:
+            false
+        };
+      }
+
+
+      const dateText =
+        match[1];
+
+
+      const timeText =
+        match[2];
+
+
+      if (
+        !isValidScreenshotDateTime(
+          dateText,
+          timeText
+        )
+      ) {
+        return {
+          detected:
+            false
+        };
+      }
+
+
+      const shortTime =
+        timeText.substring(
+          0,
+          4
+        );
+
+
+      const safeBaseName =
+        sanitizeBaseName(
+          baseName
+        );
+
+
+      return {
+        detected:
+          true,
+
+        folderDate:
+          dateText,
+
+        fileName:
+          dateText +
+          "_" +
+          shortTime +
+          " " +
+          safeBaseName +
+          (
+            extension
+              ? "." +
+                extension.toLowerCase()
+              : ""
+          )
+      };
+    }
+
+
+    function isValidScreenshotDateTime(
+      dateText,
+      timeText
+    ) {
+      const year =
+        Number(
+          dateText.substring(
+            0,
+            4
+          )
+        );
+
+
+      const month =
+        Number(
+          dateText.substring(
+            4,
+            6
+          )
+        );
+
+
+      const day =
+        Number(
+          dateText.substring(
+            6,
+            8
+          )
+        );
+
+
+      const hours =
+        Number(
+          timeText.substring(
+            0,
+            2
+          )
+        );
+
+
+      const minutes =
+        Number(
+          timeText.substring(
+            2,
+            4
+          )
+        );
+
+
+      const seconds =
+        Number(
+          timeText.substring(
+            4,
+            6
+          )
+        );
+
+
+      if (
+        month < 1 ||
+        month > 12 ||
+        day < 1 ||
+        hours > 23 ||
+        minutes > 59 ||
+        seconds > 59
+      ) {
+        return false;
+      }
+
+
+      const testDate =
+        new Date(
+          year,
+          month - 1,
+          day
+        );
+
+
+      return (
+        testDate.getFullYear() === year &&
+        testDate.getMonth() ===
+          month - 1 &&
+        testDate.getDate() === day
+      );
+    }
+
+
+    /*
+      ==================================================
+      GENERAL HELPERS
+      ==================================================
+    */
+
+    function hasDraggedFiles(
+      event
+    ) {
+      if (
+        !event.dataTransfer ||
+        !event.dataTransfer.types
+      ) {
+        return false;
+      }
+
+
+      return Array.from(
+        event.dataTransfer.types
+      ).includes(
+        "Files"
+      );
+    }
+
+
+    function removeDragState() {
+      dragCounter =
+        0;
+
+      document.body.classList.remove(
+        "dragging"
+      );
+
+      dropArea.classList.remove(
+        "active"
+      );
+    }
+
+
+    function getOriginalFileName(
+      deletionData,
+      fallbackName = "image"
+    ) {
+      return sanitizeDownloadFileName(
+        deletionData.originalImageName ||
+        fallbackName ||
+        "image"
+      );
+    }
+
+
+    function normalizeJsonObject(
+      value
+    ) {
+      if (
+        value === null ||
+        value === undefined
+      ) {
+        return {};
+      }
+
+
+      if (
+        typeof value === "object" &&
+        !Array.isArray(
+          value
+        )
+      ) {
+        return {
+          ...value
+        };
+      }
+
+
+      if (
+        typeof value === "string"
+      ) {
+        try {
+          const parsed =
+            JSON.parse(
+              value
+            );
+
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            !Array.isArray(
+              parsed
+            )
+          ) {
+            return parsed;
+          }
+        } catch {
+          return {};
+        }
+      }
+
+
+      return {};
+    }
+
+
+    function createUniqueKey() {
+      const values =
+        crypto.getRandomValues(
+          new Uint32Array(2)
+        );
+
+
+      return (
+        "file_" +
+        Date.now().toString(36) +
+        "_" +
+        values[0].toString(36) +
+        values[1].toString(36)
+      );
+    }
+
+
+    function createLocalItemId() {
+      if (
+        typeof crypto.randomUUID ===
+        "function"
+      ) {
+        return crypto.randomUUID();
+      }
+
+
+      return (
+        Date.now().toString(36) +
+        Math.random()
+          .toString(36)
+          .slice(2)
+      );
+    }
+
+
+    function createBinFileName(
+      imageFileName
+    ) {
+      return (
+        sanitizeBaseName(
+          removeFileExtension(
+            imageFileName
+          )
+        ) +
+        ".bin"
+      );
+    }
+
+
+    function sanitizeFileName(
+      name
+    ) {
+      const extension =
+        getFileExtension(
+          name
+        );
+
+
+      let baseName =
+        sanitizeBaseName(
+          removeFileExtension(
+            name
+          )
+        );
+
+
+      if (!baseName) {
+        baseName =
+          "image";
+      }
+
+
+      const safeExtension =
+        extension.replace(
+          /[^a-zA-Z0-9]/g,
+          ""
+        );
+
+
+      return (
+        baseName +
+        (
+          safeExtension
+            ? "." +
+              safeExtension.toLowerCase()
+            : ""
+        )
+      );
+    }
+
+
+    function sanitizeDownloadFileName(
+      name
+    ) {
+      const safeName =
+        String(
+          name || "image"
+        )
+          .replace(
+            /[<>:"/\\|?*\u0000-\u001F]/g,
+            "_"
+          )
+          .trim();
+
+
+      return safeName ||
+        "image";
+    }
+
+
+    function sanitizeBaseName(
+      name
+    ) {
+      return String(name)
+        .replace(
+          /[<>:"/\\|?*\u0000-\u001F]/g,
+          "_"
+        )
+        .replace(
+          /\s+/g,
+          " "
+        )
+        .replace(
+          /_+/g,
+          "_"
+        )
+        .trim();
+    }
+
+
+    function getFileExtension(
+      fileName
+    ) {
+      const dotIndex =
+        fileName.lastIndexOf(
+          "."
+        );
+
+
+      if (
+        dotIndex <= 0 ||
+        dotIndex ===
+          fileName.length - 1
+      ) {
+        return "";
+      }
+
+
+      return fileName.substring(
+        dotIndex + 1
+      );
+    }
+
+
+    function removeFileExtension(
+      fileName
+    ) {
+      const dotIndex =
+        fileName.lastIndexOf(
+          "."
+        );
+
+
+      if (dotIndex <= 0) {
+        return fileName;
+      }
+
+
+      return fileName.substring(
+        0,
+        dotIndex
+      );
+    }
+
+
+    function formatFolderDate(
+      value
+    ) {
+      const text =
+        String(
+          value
+        );
+
+
+      if (
+        !/^\d{8}$/.test(
+          text
+        )
+      ) {
+        return text;
+      }
+
+
+      return (
+        text.substring(0, 4) +
+        "-" +
+        text.substring(4, 6) +
+        "-" +
+        text.substring(6, 8)
+      );
+    }
+
+
+    function createToken() {
+      if (
+        typeof crypto.randomUUID ===
+        "function"
+      ) {
+        return crypto.randomUUID();
+      }
+
+
+      return (
+        Date.now().toString(36) +
+        Math.random()
+          .toString(36)
+          .substring(2)
+      );
+    }
+
+
+    function addCacheBuster(
+      url
+    ) {
+      const separator =
+        url.includes("?")
+          ? "&"
+          : "?";
+
+
+      return (
+        url +
+        separator +
+        "time=" +
+        Date.now()
+      );
+    }
+
+
+    function delay(
+      milliseconds
+    ) {
+      return new Promise(
+        function (resolve) {
+          setTimeout(
+            resolve,
+            milliseconds
+          );
+        }
+      );
+    }
+
+
+    async function readJsonResponse(
+      response
+    ) {
+      const text =
+        await response.text();
+
+
+      if (!text) {
+        return {};
+      }
+
+
+      try {
+        return JSON.parse(
+          text
+        );
+      } catch {
+        return {
+          message:
+            text
+        };
+      }
+    }
+
+
+    function revokeTrackedObjectUrl(
+      objectUrl
+    ) {
+      if (!objectUrl) {
+        return;
+      }
+
+
+      URL.revokeObjectURL(
+        objectUrl
+      );
+
+
+      activeObjectUrls.delete(
+        objectUrl
+      );
+    }
+
+
+    function validateSettings() {
+      if (
+        !imagekitdata.publicKey ||
+        imagekitdata.publicKey.includes(
+          "YOUR_IMAGEKIT"
+        )
+      ) {
+        showStatus(
+          "Add your ImageKit public key.",
+          "error"
+        );
+
+        return false;
+      }
+
+
+      if (
+        !imagekitdata.privateKey ||
+        imagekitdata.privateKey.includes(
+          "YOUR_IMAGEKIT"
+        )
+      ) {
+        showStatus(
+          "Add your ImageKit private key.",
+          "error"
+        );
+
+        return false;
+      }
+
+
+      if (
+        !supabasedata.supabaseUrl ||
+        supabasedata.supabaseUrl.includes(
+          "YOUR_PROJECT"
+        )
+      ) {
+        showStatus(
+          "Add your Supabase project URL.",
+          "error"
+        );
+
+        return false;
+      }
+
+
+      if (
+        !supabasedata.supabaseAnonKey ||
+        supabasedata.supabaseAnonKey.includes(
+          "YOUR_SUPABASE"
+        )
+      ) {
+        showStatus(
+          "Add your Supabase anon key.",
+          "error"
+        );
+
+        return false;
+      }
+
+
+      return true;
+    }
+
+
+    function setUploadState(
+      processing
+    ) {
+      uploadAllButton.disabled =
+        processing;
+
+      clearAllButton.disabled =
+        processing;
+
+      dropArea.style.pointerEvents =
+        processing
+          ? "none"
+          : "";
+
+      uploadAllButton.textContent =
+        processing
+          ? "Processing Images..."
+          : "Encrypt and Upload All";
+    }
+
+
+    function showProgress() {
+      progressWrap.style.display =
+        "block";
+
+      updateProgress(
+        0,
+        1,
+        "Preparing..."
+      );
+    }
+
+
+    function hideProgress() {
+      progressWrap.style.display =
+        "none";
+
+      progressBar.style.width =
+        "0%";
+    }
+
+
+    function updateProgress(
+      completed,
+      total,
+      message
+    ) {
+      const percentage =
+        total > 0
+          ? Math.round(
+              (
+                completed /
+                total
+              ) * 100
+            )
+          : 0;
+
+
+      progressText.textContent =
+        message;
+
+      progressPercent.textContent =
+        percentage + "%";
+
+      progressBar.style.width =
+        percentage + "%";
+    }
+
+
+    function showStatus(
+      message,
+      type = ""
+    ) {
+      statusElement.textContent =
+        message;
+
+      statusElement.className =
+        "status";
+
+
+      if (type) {
+        statusElement.classList.add(
+          type
+        );
+      }
+    }
+
+
+    function clearStatus() {
+      statusElement.textContent =
+        "";
+
+      statusElement.className =
+        "status";
+    }
+
+
+    window.addEventListener(
+      "beforeunload",
+      function () {
+        for (
+          const objectUrl
+          of activeObjectUrls
+        ) {
+          URL.revokeObjectURL(
+            objectUrl
+          );
+        }
+      }
+    );
+
+
+    window.addEventListener(
+      "DOMContentLoaded",
+      function () {
+        if (
+          validateSettings()
+        ) {
+          clearStatus();
+
+          resetAndLoadFolders();
+        } else {
+          folderList.innerHTML =
+            '<div class="empty-message">Add your ImageKit and Supabase configuration.</div>';
+
+          bottomSpinner.style.display =
+            "none";
+        }
+      }
+    );
+  </script>
+
+</body>
+</html>
