@@ -1,0 +1,4112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Encrypted Upload Folders</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070910;
+      --panel: #101520;
+      --panel-2: #161c29;
+      --panel-3: #1d2535;
+      --border: rgba(255,255,255,.1);
+      --text: #f5f7fb;
+      --muted: #929cad;
+      --purple: #8064ff;
+      --purple-2: #a18cff;
+      --green: #23ad73;
+      --red: #dc5364;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% 0%, rgba(128,100,255,.2), transparent 30%),
+        radial-gradient(circle at 100% 10%, rgba(36,174,255,.1), transparent 25%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+    }
+
+    .page {
+      width: min(1150px, calc(100% - 24px));
+      margin: auto;
+      padding: 30px 0 80px;
+    }
+
+    .top {
+      margin-bottom: 24px;
+    }
+
+    .top h1 {
+      margin: 0;
+      font-size: clamp(28px, 5vw, 43px);
+      letter-spacing: -.04em;
+    }
+
+    .top p {
+      max-width: 750px;
+      margin: 9px 0 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .panel {
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 21px;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.04), rgba(255,255,255,.01)),
+        var(--panel);
+      box-shadow: 0 25px 70px rgba(0,0,0,.34);
+    }
+
+    .drop-area {
+      min-height: 150px;
+      display: grid;
+      place-items: center;
+      padding: 25px;
+      border: 1.5px dashed rgba(161,140,255,.65);
+      border-radius: 17px;
+      background:
+        linear-gradient(135deg, rgba(128,100,255,.14), rgba(36,174,255,.05));
+      text-align: center;
+      cursor: pointer;
+      transition: .2s;
+    }
+
+    .drop-area:hover,
+    .drop-area.active {
+      transform: translateY(-2px);
+      border-color: #c2b5ff;
+      background:
+        linear-gradient(135deg, rgba(128,100,255,.22), rgba(36,174,255,.08));
+    }
+
+    .drop-area strong {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 18px;
+    }
+
+    .drop-area span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    #fileInput,
+    #folderFileInput {
+      display: none;
+    }
+
+    body.dragging-page::after {
+      content: "Drop here to create a new folder";
+      position: fixed;
+      inset: 12px;
+      z-index: 9998;
+      display: grid;
+      place-items: center;
+      border: 2px dashed #ae9cff;
+      border-radius: 24px;
+      background: rgba(7,9,16,.95);
+      color: #c9beff;
+      font-size: clamp(22px, 5vw, 38px);
+      font-weight: 800;
+      pointer-events: none;
+      backdrop-filter: blur(15px);
+    }
+
+    .selection {
+      display: none;
+      margin-top: 18px;
+    }
+
+    .section-header,
+    .vault-header,
+    .folder-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .section-header h2,
+    .vault-header h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .target-folder {
+      margin-top: 4px;
+      color: #c2b5ff;
+      font-size: 13px;
+    }
+
+    .selected-grid,
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+      gap: 13px;
+    }
+
+    .selected-grid {
+      margin-top: 14px;
+    }
+
+    .selected-card,
+    .image-card {
+      min-width: 0;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      background: var(--panel-2);
+    }
+
+    .selected-card.invalid {
+      border-color: rgba(220,83,100,.65);
+    }
+
+    .square {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      overflow: hidden;
+      border-radius: 11px;
+      background: #202736;
+    }
+
+    .square img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    .remove-preview {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border-radius: 50%;
+      background: rgba(5,7,12,.78);
+      color: white;
+      cursor: pointer;
+    }
+
+    .rename-input {
+      width: 100%;
+      margin-top: 8px;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: none;
+      background: #0a0e17;
+      color: white;
+      font-size: 12px;
+    }
+
+    .rename-input:focus {
+      border-color: var(--purple);
+    }
+
+    .invalid-text {
+      margin-top: 6px;
+      color: #ff8492;
+      font-size: 11px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .btn {
+      min-height: 39px;
+      padding: 9px 14px;
+      border-radius: 10px;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+      transition: .18s;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      opacity: .48;
+      cursor: not-allowed;
+    }
+
+    .primary {
+      background: linear-gradient(135deg, var(--purple), var(--purple-2));
+    }
+
+    .secondary {
+      background: #2a3448;
+    }
+
+    .green {
+      background: var(--green);
+    }
+
+    .red {
+      background: var(--red);
+    }
+
+    .small {
+      min-height: 33px;
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    .progress {
+      display: none;
+      margin-top: 15px;
+    }
+
+    .progress-text {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .track {
+      height: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #252d3d;
+    }
+
+    .bar {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--purple), #29bfff);
+      transition: width .2s;
+    }
+
+    .status {
+      min-height: 25px;
+      margin: 15px 3px 0;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .status.success {
+      color: #55d89a;
+    }
+
+    .status.error {
+      color: #ff8492;
+    }
+
+    .vault {
+      margin-top: 30px;
+    }
+
+    .folder-list {
+      display: grid;
+      gap: 17px;
+      margin-top: 15px;
+    }
+
+    .folder {
+      position: relative;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 19px;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.04), rgba(255,255,255,.01)),
+        var(--panel);
+      box-shadow: 0 18px 50px rgba(0,0,0,.24);
+      transition: .2s;
+    }
+
+    .folder.folder-drag-active {
+      border-color: #a994ff;
+      box-shadow:
+        0 0 0 3px rgba(128,100,255,.17),
+        0 18px 50px rgba(0,0,0,.3);
+      transform: translateY(-2px);
+    }
+
+    .folder-drop-overlay {
+      position: absolute;
+      inset: 5px;
+      z-index: 20;
+      display: none;
+      place-items: center;
+      border: 2px dashed #a994ff;
+      border-radius: 16px;
+      background: rgba(9,12,21,.93);
+      color: #d2c9ff;
+      font-size: 18px;
+      font-weight: 800;
+      text-align: center;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+    }
+
+    .folder.folder-drag-active .folder-drop-overlay {
+      display: grid;
+    }
+
+    .folder-processing-overlay {
+      position: absolute;
+      inset: 5px;
+      z-index: 21;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      border-radius: 16px;
+      background: rgba(7,10,17,.94);
+      color: white;
+      text-align: center;
+      backdrop-filter: blur(9px);
+    }
+
+    .folder.folder-processing .folder-processing-overlay {
+      display: grid;
+    }
+
+    .folder-header {
+      margin-bottom: 13px;
+    }
+
+    .folder-name-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .folder-icon {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      background: rgba(128,100,255,.15);
+      color: #c7bbff;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .folder-title {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    .folder-count {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .folder-hint {
+      margin-top: 4px;
+      color: #9f93ce;
+      font-size: 11px;
+    }
+
+    .folder-actions {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    .file-name {
+      min-height: 34px;
+      margin-top: 7px;
+      color: #cfd5df;
+      font-size: 11px;
+      word-break: break-word;
+    }
+
+    .card-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 7px;
+    }
+
+    .loading,
+    .waiting,
+    .image-error {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .image-error {
+      color: #ff8492;
+    }
+
+    .empty {
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      background: var(--panel);
+      color: var(--muted);
+      text-align: center;
+    }
+
+    #loadSentinel {
+      min-height: 85px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(255,255,255,.12);
+      border-top-color: #a18cff;
+      border-radius: 50%;
+      animation: spin .75s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (max-width: 650px) {
+      .page {
+        width: calc(100% - 18px);
+        padding-top: 20px;
+      }
+
+      .panel {
+        padding: 13px;
+      }
+
+      .selected-grid,
+      .image-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+      }
+
+      .folder-actions {
+        width: 100%;
+      }
+
+      .folder-actions .btn {
+        flex: 1;
+      }
+    }
+    .urlbuttun_cl{
+      background-color: transparent;
+      display:flex;
+        justify-content:center; /* Horizontal center */
+        align-items:center; 
+    }
+    .btan{
+        padding:4px 40px;
+        border:none;
+        border-radius:50px;
+        background:linear-gradient(135deg, #00bd7d, #00d48f);
+        color:#fff;
+        font-size:18px;
+        font-weight:600;
+        cursor:pointer;
+        transition:all .25s ease;
+        height: 30px;
+        
+    }
+  </style>
+</head>
+
+<body>
+
+  <main class="page">
+
+    <header class="top">
+      <h1>Encrypted Upload Folders</h1>
+
+      <p>
+        Drop images on the main upload area to create a new folder.
+        Drop images directly on an existing folder to encrypt and upload
+        them into that folder immediately.
+      </p>
+      <div class="urlbuttun_cl">
+        <button class="btan" onclick="window.open('https://example.com','_blank')">Last Active</button>
+        </header>
+      </div>
+      
+
+
+    <section class="panel">
+
+      <div class="drop-area" id="dropArea">
+        <div>
+          <strong>Create a new upload folder</strong>
+
+          <span>
+            Select multiple images or drag and drop them here
+          </span>
+        </div>
+      </div>
+
+      <input
+        type="file"
+        id="fileInput"
+        accept="image/*"
+        multiple
+      >
+
+      <input
+        type="file"
+        id="folderFileInput"
+        accept="image/*"
+        multiple
+      >
+
+
+      <section class="selection" id="selectionSection">
+
+        <div class="section-header">
+
+          <div>
+            <h2 id="selectionTitle">
+              Selected images
+            </h2>
+
+            <div
+              class="target-folder"
+              id="targetFolderText"
+            ></div>
+          </div>
+
+          <div id="selectedCount"></div>
+
+        </div>
+
+
+        <div
+          class="selected-grid"
+          id="selectedGrid"
+        ></div>
+
+
+        <div class="buttons">
+
+          <button
+            class="btn primary"
+            id="uploadButton"
+          >
+            Encrypt and Upload All
+          </button>
+
+          <button
+            class="btn secondary"
+            id="clearButton"
+          >
+            Clear
+          </button>
+
+        </div>
+
+
+        <div
+          class="progress"
+          id="progress"
+        >
+          <div class="progress-text">
+            <span id="progressMessage">
+              Preparing
+            </span>
+
+            <span id="progressPercent">
+              0%
+            </span>
+          </div>
+
+          <div class="track">
+            <div
+              class="bar"
+              id="progressBar"
+            ></div>
+          </div>
+        </div>
+
+      </section>
+
+    </section>
+
+
+    <div class="status" id="status"></div>
+
+
+    <section class="vault">
+
+      <div class="vault-header">
+
+        <h2>Saved folders</h2>
+
+        <button
+          class="btn secondary small"
+          id="refreshButton"
+        >
+          Refresh
+        </button>
+
+      </div>
+
+
+      <div
+        class="folder-list"
+        id="folderList"
+      ></div>
+
+
+      <div id="loadSentinel">
+        <div
+          class="spinner"
+          id="bottomSpinner"
+        ></div>
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <script>
+    /*
+      Browser-only test project.
+
+      ImageKit private key and encryption password
+      are visible in the HTML source.
+    */
+
+    
+const imagekitdata = {
+      publicKey: "public_QjNtL3IoHoQMSSd54ON9jnjUYdk=",
+      privateKey: "private_2Hq3NSRC/U+pSE7VIw9qC6KMkhM=",
+      urlEndpoint: "https://ik.imagekit.io/e6cipwcpz",
+      folder: "/test-upload",
+      useUniqueFileName: false 
+    };
+    const supabasedata = {
+      supabaseUrl: "https://gppfaxctfuwdpjimobrh.supabase.co",
+      supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwcGZheGN0ZnV3ZHBqaW1vYnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMDc3NjEsImV4cCI6MjA5Njg4Mzc2MX0.CbkeAw5LQZSmD9mfMmw44YwW3LarJrrXO4cI_kPHXyw",
+      tableName: "ayuactivity",
+  folderNameColumn: "folder_name",
+  urlJsonColumn: "url_json",
+  urlDataColumn: "url_data",
+  foldersPerPage: 2
+    };
+    const encryptionPassword =
+      "a1aa2aaa3aaaa4aa";
+
+
+    const encryptionConfig = {
+      iterations: 250000,
+      saltLength: 16,
+      ivLength: 12
+    };
+
+
+    const supabaseClient =
+      window.supabase.createClient(
+        supabasedata.supabaseUrl,
+        supabasedata.supabaseAnonKey
+      );
+
+
+    const dropArea =
+      document.getElementById("dropArea");
+
+    const fileInput =
+      document.getElementById("fileInput");
+
+    const folderFileInput =
+      document.getElementById("folderFileInput");
+
+    const selectionSection =
+      document.getElementById("selectionSection");
+
+    const selectionTitle =
+      document.getElementById("selectionTitle");
+
+    const targetFolderText =
+      document.getElementById("targetFolderText");
+
+    const selectedCount =
+      document.getElementById("selectedCount");
+
+    const selectedGrid =
+      document.getElementById("selectedGrid");
+
+    const uploadButton =
+      document.getElementById("uploadButton");
+
+    const clearButton =
+      document.getElementById("clearButton");
+
+    const progress =
+      document.getElementById("progress");
+
+    const progressMessage =
+      document.getElementById("progressMessage");
+
+    const progressPercent =
+      document.getElementById("progressPercent");
+
+    const progressBar =
+      document.getElementById("progressBar");
+
+    const statusElement =
+      document.getElementById("status");
+
+    const refreshButton =
+      document.getElementById("refreshButton");
+
+    const folderList =
+      document.getElementById("folderList");
+
+    const loadSentinel =
+      document.getElementById("loadSentinel");
+
+    const bottomSpinner =
+      document.getElementById("bottomSpinner");
+
+
+    let selectedItems = [];
+
+    let selectionMode =
+      "new";
+
+    let targetExistingFolder =
+      null;
+
+    let pageDragCounter =
+      0;
+
+    let currentPage =
+      0;
+
+    let loadingFolders =
+      false;
+
+    let hasMoreFolders =
+      true;
+
+    let loadGeneration =
+      0;
+
+    let activeFolderDrag =
+      null;
+
+    let directFolderUploadRunning =
+      false;
+
+
+    const decryptedCache =
+      new Map();
+
+    const objectUrls =
+      new Set();
+
+
+    const thumbnailObserver =
+      new IntersectionObserver(
+        handleThumbnailVisibility,
+        {
+          rootMargin: "350px 0px",
+          threshold: .01
+        }
+      );
+
+
+    const paginationObserver =
+      new IntersectionObserver(
+        function (entries) {
+          if (
+            entries[0].isIntersecting &&
+            hasMoreFolders &&
+            !loadingFolders
+          ) {
+            loadNextFolderPage();
+          }
+        },
+        {
+          rootMargin: "500px 0px"
+        }
+      );
+
+
+    paginationObserver.observe(
+      loadSentinel
+    );
+
+
+    dropArea.addEventListener(
+      "click",
+      function () {
+        fileInput.click();
+      }
+    );
+
+
+    fileInput.addEventListener(
+      "change",
+      function () {
+        startNewFolderSelection(
+          Array.from(fileInput.files || [])
+        );
+
+        fileInput.value = "";
+      }
+    );
+
+
+    folderFileInput.addEventListener(
+      "change",
+      function () {
+        addFilesToExistingSelection(
+          Array.from(folderFileInput.files || [])
+        );
+
+        folderFileInput.value = "";
+      }
+    );
+
+
+    uploadButton.addEventListener(
+      "click",
+      uploadSelectedItems
+    );
+
+
+    clearButton.addEventListener(
+      "click",
+      function () {
+        clearSelection(true);
+      }
+    );
+
+
+    refreshButton.addEventListener(
+      "click",
+      resetFolders
+    );
+
+
+    /*
+      Page-level drag-and-drop creates a new folder.
+
+      Folder drop handlers stop propagation, so dropping
+      directly on a folder does not create a new folder.
+    */
+
+    window.addEventListener(
+      "dragenter",
+      function (event) {
+        if (
+          event.target.closest &&
+          event.target.closest(".folder")
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+
+        if (!hasFiles(event)) {
+          return;
+        }
+
+        pageDragCounter++;
+
+        document.body.classList.add(
+          "dragging-page"
+        );
+
+        dropArea.classList.add(
+          "active"
+        );
+      }
+    );
+
+
+    window.addEventListener(
+      "dragover",
+      function (event) {
+        if (
+          event.target.closest &&
+          event.target.closest(".folder")
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect =
+            "copy";
+        }
+      }
+    );
+
+
+    window.addEventListener(
+      "dragleave",
+      function (event) {
+        if (
+          event.target.closest &&
+          event.target.closest(".folder")
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+
+        pageDragCounter--;
+
+        if (pageDragCounter <= 0) {
+          removePageDragState();
+        }
+      }
+    );
+
+
+    window.addEventListener(
+      "drop",
+      function (event) {
+        if (
+          event.target.closest &&
+          event.target.closest(".folder")
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+
+        removePageDragState();
+
+        startNewFolderSelection(
+          Array.from(
+            event.dataTransfer.files || []
+          )
+        );
+      }
+    );
+
+
+    function startNewFolderSelection(files) {
+      clearSelection(false);
+
+      selectionMode =
+        "new";
+
+      targetExistingFolder =
+        null;
+
+      addFilesToSelection(files);
+    }
+
+
+    function openAddFilesForFolder(
+      folderName
+    ) {
+      clearSelection(false);
+
+      selectionMode =
+        "existing";
+
+      targetExistingFolder =
+        folderName;
+
+      folderFileInput.click();
+    }
+
+
+    function addFilesToExistingSelection(
+      files
+    ) {
+      if (!targetExistingFolder) {
+        return;
+      }
+
+      selectionMode =
+        "existing";
+
+      addFilesToSelection(files);
+
+      selectionSection.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }
+
+
+    function addFilesToSelection(files) {
+      clearStatus();
+
+      const imageFiles =
+        files.filter(
+          function (file) {
+            return file.type.startsWith(
+              "image/"
+            );
+          }
+        );
+
+
+      if (imageFiles.length === 0) {
+        showStatus(
+          "No valid image files were selected.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      for (const file of imageFiles) {
+        const detected =
+          detectScreenshotDateTime(
+            file.name
+          );
+
+        const previewUrl =
+          URL.createObjectURL(file);
+
+        objectUrls.add(previewUrl);
+
+
+        selectedItems.push({
+          id: createId(),
+          file: file,
+          previewUrl: previewUrl,
+          valid: detected.detected,
+
+          timestamp:
+            detected.detected
+              ? detected.timestamp
+              : null,
+
+          renamedName:
+            detected.detected
+              ? detected.renamedName
+              : file.name
+        });
+      }
+
+
+      renderSelection();
+    }
+
+
+    function renderSelection() {
+      selectedGrid.innerHTML = "";
+
+      selectionSection.style.display =
+        selectedItems.length > 0
+          ? "block"
+          : "none";
+
+
+      selectedCount.textContent =
+        selectedItems.length +
+        (
+          selectedItems.length === 1
+            ? " image"
+            : " images"
+        );
+
+
+      const targetFolder =
+        getCurrentTargetFolder();
+
+
+      if (selectionMode === "existing") {
+        selectionTitle.textContent =
+          "Add images to folder";
+
+        targetFolderText.textContent =
+          targetExistingFolder
+            ? "Folder: " + targetExistingFolder
+            : "";
+
+        uploadButton.textContent =
+          "Add Images to Folder";
+
+      } else {
+        selectionTitle.textContent =
+          "Create new folder";
+
+        targetFolderText.textContent =
+          targetFolder
+            ? "New folder: " + targetFolder
+            : "Select filenames containing YYYYMMDD_HHMMSS";
+
+        uploadButton.textContent =
+          "Encrypt and Upload All";
+      }
+
+
+      for (const item of selectedItems) {
+        const card =
+          document.createElement("article");
+
+        card.className =
+          "selected-card";
+
+        if (!item.valid) {
+          card.classList.add("invalid");
+        }
+
+
+        const square =
+          document.createElement("div");
+
+        square.className =
+          "square";
+
+
+        const image =
+          document.createElement("img");
+
+        image.src =
+          item.previewUrl;
+
+        image.alt =
+          item.file.name;
+
+
+        const removeButton =
+          document.createElement("button");
+
+        removeButton.className =
+          "remove-preview";
+
+        removeButton.textContent =
+          "×";
+
+        removeButton.addEventListener(
+          "click",
+          function () {
+            removeSelectedItem(
+              item.id
+            );
+          }
+        );
+
+
+        square.appendChild(image);
+        square.appendChild(removeButton);
+
+
+        const renameInput =
+          document.createElement("input");
+
+        renameInput.className =
+          "rename-input";
+
+        renameInput.value =
+          item.renamedName;
+
+        renameInput.disabled =
+          !item.valid;
+
+        renameInput.addEventListener(
+          "change",
+          function () {
+            item.renamedName =
+              sanitizeFileName(
+                renameInput.value
+              );
+
+            renameInput.value =
+              item.renamedName;
+          }
+        );
+
+
+        card.appendChild(square);
+        card.appendChild(renameInput);
+
+
+        if (!item.valid) {
+          const error =
+            document.createElement("div");
+
+          error.className =
+            "invalid-text";
+
+          error.textContent =
+            "Date and time were not detected.";
+
+          card.appendChild(error);
+        }
+
+
+        selectedGrid.appendChild(card);
+      }
+
+
+      uploadButton.disabled =
+        selectedItems.filter(
+          function (item) {
+            return item.valid;
+          }
+        ).length === 0 ||
+        !targetFolder;
+    }
+
+
+    function getCurrentTargetFolder() {
+      if (
+        selectionMode === "existing"
+      ) {
+        return targetExistingFolder;
+      }
+
+
+      const validItems =
+        selectedItems.filter(
+          function (item) {
+            return (
+              item.valid &&
+              item.timestamp
+            );
+          }
+        );
+
+
+      if (validItems.length === 0) {
+        return null;
+      }
+
+
+      validItems.sort(
+        function (a, b) {
+          return a.timestamp.localeCompare(
+            b.timestamp
+          );
+        }
+      );
+
+
+      return formatTimestampAsFolder(
+        validItems[0].timestamp
+      );
+    }
+
+
+    function removeSelectedItem(id) {
+      const index =
+        selectedItems.findIndex(
+          function (item) {
+            return item.id === id;
+          }
+        );
+
+
+      if (index === -1) {
+        return;
+      }
+
+
+      revokeUrl(
+        selectedItems[index].previewUrl
+      );
+
+      selectedItems.splice(
+        index,
+        1
+      );
+
+      renderSelection();
+    }
+
+
+    function clearSelection(clearMessage) {
+      for (const item of selectedItems) {
+        revokeUrl(item.previewUrl);
+      }
+
+      selectedItems = [];
+      selectionMode = "new";
+      targetExistingFolder = null;
+
+      selectionSection.style.display =
+        "none";
+
+      selectedGrid.innerHTML = "";
+
+      hideProgress();
+
+
+      if (clearMessage) {
+        clearStatus();
+      }
+    }
+
+
+    async function uploadSelectedItems() {
+      const validItems =
+        selectedItems.filter(
+          function (item) {
+            return item.valid;
+          }
+        );
+
+
+      const folderName =
+        getCurrentTargetFolder();
+
+
+      if (
+        validItems.length === 0 ||
+        !folderName
+      ) {
+        showStatus(
+          "No valid images are available.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      if (!validateSettings()) {
+        return;
+      }
+
+
+      setUploading(true);
+      showProgress();
+
+
+      let success = 0;
+      let failed = 0;
+
+      const completedIds =
+        new Set();
+
+
+      try {
+        for (
+          let index = 0;
+          index < validItems.length;
+          index++
+        ) {
+          const item =
+            validItems[index];
+
+
+          updateProgress(
+            index,
+            validItems.length,
+            "Processing " +
+            (index + 1) +
+            " of " +
+            validItems.length
+          );
+
+
+          try {
+            await uploadOneImage(
+              item,
+              folderName
+            );
+
+            completedIds.add(
+              item.id
+            );
+
+            success++;
+
+          } catch (error) {
+            console.error(error);
+            failed++;
+          }
+
+
+          updateProgress(
+            index + 1,
+            validItems.length,
+            "Processed " +
+            (index + 1) +
+            " of " +
+            validItems.length
+          );
+        }
+
+
+        selectedItems =
+          selectedItems.filter(
+            function (item) {
+              if (
+                completedIds.has(item.id)
+              ) {
+                revokeUrl(item.previewUrl);
+                return false;
+              }
+
+              return true;
+            }
+          );
+
+
+        renderSelection();
+
+
+        showStatus(
+          success +
+          " uploaded" +
+          (
+            failed
+              ? ", " +
+                failed +
+                " failed."
+              : " successfully."
+          ),
+          failed
+            ? "error"
+            : "success"
+        );
+
+
+        await resetFolders();
+
+      } finally {
+        setUploading(false);
+
+        setTimeout(
+          hideProgress,
+          600
+        );
+      }
+    }
+
+
+    /*
+      Direct folder drop.
+
+      This does not show the selection screen.
+      It immediately validates, renames, encrypts,
+      uploads and saves files into the selected folder.
+    */
+
+    async function processDroppedFilesInFolder(
+      folderName,
+      files,
+      folderElement
+    ) {
+      if (directFolderUploadRunning) {
+        showStatus(
+          "Another folder upload is already running.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      const imageFiles =
+        Array.from(files).filter(
+          function (file) {
+            return file.type.startsWith(
+              "image/"
+            );
+          }
+        );
+
+
+      if (imageFiles.length === 0) {
+        showStatus(
+          "No valid image files were dropped.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      const preparedItems = [];
+
+      let invalidCount = 0;
+
+
+      for (const file of imageFiles) {
+        const detected =
+          detectScreenshotDateTime(
+            file.name
+          );
+
+
+        if (!detected.detected) {
+          invalidCount++;
+          continue;
+        }
+
+
+        preparedItems.push({
+          file: file,
+          renamedName:
+            detected.renamedName
+        });
+      }
+
+
+      if (preparedItems.length === 0) {
+        showStatus(
+          "None of the dropped filenames contain a valid YYYYMMDD_HHMMSS value.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      if (!validateSettings()) {
+        return;
+      }
+
+
+      directFolderUploadRunning =
+        true;
+
+      folderElement.classList.add(
+        "folder-processing"
+      );
+
+
+      const processingText =
+        folderElement.querySelector(
+          ".folder-processing-text"
+        );
+
+
+      let success = 0;
+      let failed = 0;
+
+
+      try {
+        for (
+          let index = 0;
+          index < preparedItems.length;
+          index++
+        ) {
+          const item =
+            preparedItems[index];
+
+
+          processingText.textContent =
+            "Encrypting and uploading " +
+            (index + 1) +
+            " of " +
+            preparedItems.length;
+
+
+          try {
+            await uploadOneImage(
+              item,
+              folderName
+            );
+
+            success++;
+
+          } catch (error) {
+            console.error(error);
+            failed++;
+          }
+        }
+
+
+        let message =
+          success +
+          " images added to " +
+          folderName;
+
+
+        if (invalidCount) {
+          message +=
+            ". " +
+            invalidCount +
+            " filenames were skipped";
+        }
+
+
+        if (failed) {
+          message +=
+            ". " +
+            failed +
+            " uploads failed";
+        }
+
+
+        showStatus(
+          message + ".",
+          failed
+            ? "error"
+            : "success"
+        );
+
+
+        await resetFolders();
+
+      } finally {
+        directFolderUploadRunning =
+          false;
+
+        folderElement.classList.remove(
+          "folder-processing"
+        );
+      }
+    }
+
+
+    async function uploadOneImage(
+      item,
+      folderName
+    ) {
+      const finalImageName =
+        sanitizeFileName(
+          item.renamedName
+        );
+
+
+      const binName =
+        removeExtension(
+          finalImageName
+        ) +
+        ".bin";
+
+
+      const encryptedBlob =
+        await encryptImage(
+          item.file,
+          finalImageName
+        );
+
+
+      const encryptedFile =
+        new File(
+          [encryptedBlob],
+          binName,
+          {
+            type:
+              "application/octet-stream"
+          }
+        );
+
+
+      const uploadResult =
+        await uploadToImageKit(
+          encryptedFile
+        );
+
+
+      const uniqueKey =
+        createUniqueKey();
+
+
+      const fileData = {
+        fileId:
+          uploadResult.fileId,
+
+        url:
+          uploadResult.url,
+
+        filePath:
+          uploadResult.filePath || "",
+
+        name:
+          uploadResult.name || binName,
+
+        uniqueKey:
+          uniqueKey,
+
+        folderName:
+          folderName,
+
+        originalImageName:
+          finalImageName,
+
+        encryptedFileName:
+          binName,
+
+        originalMimeType:
+          item.file.type,
+
+        createdAt:
+          new Date().toISOString()
+      };
+
+
+      try {
+        await addFileToFolder(
+          folderName,
+          uniqueKey,
+          uploadResult.url,
+          fileData
+        );
+
+      } catch (error) {
+        try {
+          await deleteImageKitFile(
+            uploadResult.fileId
+          );
+        } catch (rollbackError) {
+          console.error(
+            rollbackError
+          );
+        }
+
+        throw error;
+      }
+    }
+
+
+    async function getFolderRow(
+      folderName
+    ) {
+      const {
+        data,
+        error
+      } = await supabaseClient
+        .from(
+          supabasedata.tableName
+        )
+        .select(
+          [
+            supabasedata.folderNameColumn,
+            supabasedata.urlJsonColumn,
+            supabasedata.urlDataColumn
+          ].join(",")
+        )
+        .eq(
+          supabasedata.folderNameColumn,
+          folderName
+        )
+        .maybeSingle();
+
+
+      if (error) {
+        throw error;
+      }
+
+
+      return data;
+    }
+
+
+    async function addFileToFolder(
+      folderName,
+      uniqueKey,
+      fileUrl,
+      fileData
+    ) {
+      const existing =
+        await getFolderRow(
+          folderName
+        );
+
+
+      const urlJson =
+        normalizeObject(
+          existing
+            ? existing[
+                supabasedata.urlJsonColumn
+              ]
+            : {}
+        );
+
+
+      const urlData =
+        normalizeObject(
+          existing
+            ? existing[
+                supabasedata.urlDataColumn
+              ]
+            : {}
+        );
+
+
+      urlJson[uniqueKey] =
+        fileUrl;
+
+      urlData[uniqueKey] =
+        fileData;
+
+
+      const row = {};
+
+      row[
+        supabasedata.folderNameColumn
+      ] = folderName;
+
+      row[
+        supabasedata.urlJsonColumn
+      ] = urlJson;
+
+      row[
+        supabasedata.urlDataColumn
+      ] = urlData;
+
+
+      const {
+        error
+      } = await supabaseClient
+        .from(
+          supabasedata.tableName
+        )
+        .upsert(
+          row,
+          {
+            onConflict:
+              supabasedata.folderNameColumn
+          }
+        );
+
+
+      if (error) {
+        throw error;
+      }
+    }
+
+
+    async function resetFolders() {
+      loadGeneration++;
+
+      const generation =
+        loadGeneration;
+
+      currentPage = 0;
+      loadingFolders = false;
+      hasMoreFolders = true;
+
+      folderList.innerHTML = "";
+
+      decryptedCache.clear();
+
+      thumbnailObserver.disconnect();
+
+      bottomSpinner.style.display =
+        "block";
+
+      loadSentinel.textContent = "";
+      loadSentinel.appendChild(
+        bottomSpinner
+      );
+
+
+      await loadNextFolderPage(
+        generation
+      );
+    }
+
+
+    async function loadNextFolderPage(
+      generation = loadGeneration
+    ) {
+      if (
+        loadingFolders ||
+        !hasMoreFolders
+      ) {
+        return;
+      }
+
+
+      loadingFolders = true;
+      bottomSpinner.style.display =
+        "block";
+
+
+      const size =
+        supabasedata.foldersPerPage;
+
+      const from =
+        currentPage * size;
+
+      const to =
+        from + size - 1;
+
+
+      try {
+        const {
+          data,
+          error
+        } = await supabaseClient
+          .from(
+            supabasedata.tableName
+          )
+          .select(
+            [
+              supabasedata.folderNameColumn,
+              supabasedata.urlJsonColumn,
+              supabasedata.urlDataColumn
+            ].join(",")
+          )
+          .order(
+            supabasedata.folderNameColumn,
+            {
+              ascending: false
+            }
+          )
+          .range(from, to);
+
+
+        if (
+          generation !==
+          loadGeneration
+        ) {
+          return;
+        }
+
+
+        if (error) {
+          throw error;
+        }
+
+
+        const rows =
+          data || [];
+
+
+        if (rows.length < size) {
+          hasMoreFolders = false;
+        }
+
+
+        if (
+          rows.length === 0 &&
+          currentPage === 0
+        ) {
+          folderList.innerHTML =
+            '<div class="empty">No saved folders.</div>';
+        }
+
+
+        appendFolders(rows);
+
+        currentPage++;
+
+      } catch (error) {
+        console.error(error);
+
+        showStatus(
+          "Supabase error: " +
+          error.message,
+          "error"
+        );
+
+        hasMoreFolders = false;
+
+      } finally {
+        loadingFolders = false;
+
+        bottomSpinner.style.display =
+          hasMoreFolders
+            ? "block"
+            : "none";
+
+
+        if (!hasMoreFolders) {
+          loadSentinel.textContent =
+            folderList.children.length
+              ? "All folders loaded"
+              : "";
+        }
+      }
+    }
+
+
+    function appendFolders(rows) {
+      for (const row of rows) {
+        const folderName =
+          row[
+            supabasedata.folderNameColumn
+          ];
+
+
+        const urlJson =
+          normalizeObject(
+            row[
+              supabasedata.urlJsonColumn
+            ]
+          );
+
+
+        const urlData =
+          normalizeObject(
+            row[
+              supabasedata.urlDataColumn
+            ]
+          );
+
+
+        const keys =
+          Object.keys(urlJson);
+
+
+        if (keys.length === 0) {
+          continue;
+        }
+
+
+        folderList.appendChild(
+          createFolderElement(
+            folderName,
+            keys,
+            urlJson,
+            urlData
+          )
+        );
+      }
+    }
+
+
+    function createFolderElement(
+      folderName,
+      keys,
+      urlJson,
+      urlData
+    ) {
+      const folder =
+        document.createElement("section");
+
+      folder.className =
+        "folder";
+
+
+      const dropOverlay =
+        document.createElement("div");
+
+      dropOverlay.className =
+        "folder-drop-overlay";
+
+      dropOverlay.textContent =
+        "Drop images to add them directly to " +
+        folderName;
+
+
+      const processingOverlay =
+        document.createElement("div");
+
+      processingOverlay.className =
+        "folder-processing-overlay";
+
+      processingOverlay.innerHTML =
+        '<div>' +
+          '<div class="spinner" style="margin:0 auto 14px"></div>' +
+          '<div class="folder-processing-text">Processing images...</div>' +
+        '</div>';
+
+
+      folder.appendChild(dropOverlay);
+      folder.appendChild(
+        processingOverlay
+      );
+
+
+      /*
+        Folder-specific drag-and-drop.
+      */
+
+      let folderDragCounter = 0;
+
+
+      folder.addEventListener(
+        "dragenter",
+        function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+
+
+          if (!hasFiles(event)) {
+            return;
+          }
+
+
+          folderDragCounter++;
+
+          activeFolderDrag =
+            folder;
+
+          removePageDragState();
+
+          folder.classList.add(
+            "folder-drag-active"
+          );
+        }
+      );
+
+
+      folder.addEventListener(
+        "dragover",
+        function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+
+
+          if (event.dataTransfer) {
+            event.dataTransfer.dropEffect =
+              "copy";
+          }
+
+
+          folder.classList.add(
+            "folder-drag-active"
+          );
+        }
+      );
+
+
+      folder.addEventListener(
+        "dragleave",
+        function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+
+          folderDragCounter--;
+
+
+          if (folderDragCounter <= 0) {
+            folderDragCounter = 0;
+
+            folder.classList.remove(
+              "folder-drag-active"
+            );
+
+            if (
+              activeFolderDrag ===
+              folder
+            ) {
+              activeFolderDrag = null;
+            }
+          }
+        }
+      );
+
+
+      folder.addEventListener(
+        "drop",
+        async function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+
+          folderDragCounter = 0;
+
+          folder.classList.remove(
+            "folder-drag-active"
+          );
+
+          activeFolderDrag = null;
+
+          removePageDragState();
+
+
+          const files =
+            Array.from(
+              event.dataTransfer.files || []
+            );
+
+
+          await processDroppedFilesInFolder(
+            folderName,
+            files,
+            folder
+          );
+        }
+      );
+
+
+      const header =
+        document.createElement("div");
+
+      header.className =
+        "folder-header";
+
+
+      const nameWrap =
+        document.createElement("div");
+
+      nameWrap.className =
+        "folder-name-wrap";
+
+
+      const icon =
+        document.createElement("div");
+
+      icon.className =
+        "folder-icon";
+
+      icon.textContent =
+        folderName.slice(4, 8);
+
+
+      const textWrap =
+        document.createElement("div");
+
+
+      const title =
+        document.createElement("h3");
+
+      title.className =
+        "folder-title";
+
+      title.textContent =
+        folderName;
+
+
+      const count =
+        document.createElement("div");
+
+      count.className =
+        "folder-count";
+
+      count.textContent =
+        keys.length +
+        (
+          keys.length === 1
+            ? " image"
+            : " images"
+        );
+
+
+      const hint =
+        document.createElement("div");
+
+      hint.className =
+        "folder-hint";
+
+      hint.textContent =
+        "Drop images here to upload directly";
+
+
+      textWrap.appendChild(title);
+      textWrap.appendChild(count);
+      textWrap.appendChild(hint);
+
+      nameWrap.appendChild(icon);
+      nameWrap.appendChild(textWrap);
+
+
+      const actions =
+        document.createElement("div");
+
+      actions.className =
+        "folder-actions";
+
+
+      const addButton =
+        createButton(
+          "Add Files",
+          "secondary"
+        );
+
+      addButton.addEventListener(
+        "click",
+        function () {
+          openAddFilesForFolder(
+            folderName
+          );
+        }
+      );
+
+
+      const downloadButton =
+        createButton(
+          "Download All",
+          "green"
+        );
+
+      downloadButton.addEventListener(
+        "click",
+        function () {
+          downloadFolder(
+            keys,
+            urlJson,
+            urlData,
+            downloadButton
+          );
+        }
+      );
+
+
+      const deleteButton =
+        createButton(
+          "Delete All",
+          "red"
+        );
+
+      deleteButton.addEventListener(
+        "click",
+        function () {
+          deleteFolder(
+            folderName,
+            deleteButton
+          );
+        }
+      );
+
+
+      actions.appendChild(addButton);
+      actions.appendChild(
+        downloadButton
+      );
+      actions.appendChild(
+        deleteButton
+      );
+
+
+      header.appendChild(nameWrap);
+      header.appendChild(actions);
+
+
+      const grid =
+        document.createElement("div");
+
+      grid.className =
+        "image-grid";
+
+
+      for (const key of keys) {
+        grid.appendChild(
+          createImageCard(
+            folderName,
+            key,
+            urlJson[key],
+            normalizeObject(
+              urlData[key]
+            )
+          )
+        );
+      }
+
+
+      folder.appendChild(header);
+      folder.appendChild(grid);
+
+      return folder;
+    }
+
+
+    function createButton(text, type) {
+      const button =
+        document.createElement("button");
+
+      button.className =
+        "btn " +
+        type +
+        " small";
+
+      button.textContent =
+        text;
+
+      return button;
+    }
+
+
+    function createImageCard(
+      folderName,
+      uniqueKey,
+      fileUrl,
+      fileData
+    ) {
+      const card =
+        document.createElement("article");
+
+      card.className =
+        "image-card";
+
+
+      const square =
+        document.createElement("div");
+
+      square.className =
+        "square";
+
+      square.innerHTML =
+        '<div class="waiting">Waiting to load</div>';
+
+
+      square.dataset.key =
+        uniqueKey;
+
+      square.dataset.url =
+        fileUrl;
+
+      square._fileData =
+        fileData;
+
+      square._loaded =
+        false;
+
+
+      thumbnailObserver.observe(square);
+
+
+      const name =
+        document.createElement("div");
+
+      name.className =
+        "file-name";
+
+      name.textContent =
+        getImageName(fileData);
+
+
+      const actions =
+        document.createElement("div");
+
+      actions.className =
+        "card-actions";
+
+
+      const deleteButton =
+        createButton(
+          "Delete",
+          "red"
+        );
+
+
+      deleteButton.addEventListener(
+        "click",
+        function () {
+          deleteOneImage(
+            folderName,
+            uniqueKey,
+            deleteButton
+          );
+        }
+      );
+
+
+      const downloadButton =
+        createButton(
+          "Download",
+          "green"
+        );
+
+
+      downloadButton.addEventListener(
+        "click",
+        function () {
+          downloadOneImage(
+            uniqueKey,
+            fileUrl,
+            fileData,
+            downloadButton
+          );
+        }
+      );
+
+
+      actions.appendChild(
+        deleteButton
+      );
+
+      actions.appendChild(
+        downloadButton
+      );
+
+
+      card.appendChild(square);
+      card.appendChild(name);
+      card.appendChild(actions);
+
+      return card;
+    }
+
+
+    function handleThumbnailVisibility(
+      entries
+    ) {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) {
+          continue;
+        }
+
+
+        const square =
+          entry.target;
+
+        thumbnailObserver.unobserve(
+          square
+        );
+
+
+        if (square._loaded) {
+          continue;
+        }
+
+
+        square._loaded = true;
+
+        loadThumbnail(square);
+      }
+    }
+
+
+    async function loadThumbnail(square) {
+      square.innerHTML =
+        '<div class="loading"><div class="spinner"></div></div>';
+
+
+      try {
+        const decrypted =
+          await getDecryptedFile(
+            square.dataset.key,
+            square.dataset.url,
+            square._fileData
+          );
+
+
+        const url =
+          URL.createObjectURL(
+            decrypted.blob
+          );
+
+        objectUrls.add(url);
+
+
+        const image =
+          document.createElement("img");
+
+        image.src = url;
+        image.alt = decrypted.name;
+
+
+        square.innerHTML = "";
+        square.appendChild(image);
+
+      } catch (error) {
+        square.innerHTML =
+          '<div class="image-error">Could not decrypt</div>';
+      }
+    }
+
+
+    async function getDecryptedFile(
+      key,
+      fileUrl,
+      fileData
+    ) {
+      if (decryptedCache.has(key)) {
+        return decryptedCache.get(key);
+      }
+
+
+      const response =
+        await fetch(
+          addCacheBuster(fileUrl)
+        );
+
+
+      if (!response.ok) {
+        throw new Error(
+          "Could not download encrypted file."
+        );
+      }
+
+
+      const decrypted =
+        await decryptBin(
+          await response.arrayBuffer()
+        );
+
+
+      decrypted.name =
+        getImageName(
+          fileData,
+          decrypted.name
+        );
+
+
+      decryptedCache.set(
+        key,
+        decrypted
+      );
+
+
+      return decrypted;
+    }
+
+
+    async function downloadOneImage(
+      key,
+      fileUrl,
+      fileData,
+      button
+    ) {
+      const old =
+        button.textContent;
+
+      button.disabled = true;
+      button.textContent =
+        "Preparing";
+
+
+      try {
+        const file =
+          await getDecryptedFile(
+            key,
+            fileUrl,
+            fileData
+          );
+
+
+        downloadBlob(
+          file.blob,
+          file.name
+        );
+
+      } catch (error) {
+        showStatus(
+          "Download error: " +
+          error.message,
+          "error"
+        );
+
+      } finally {
+        button.disabled = false;
+        button.textContent = old;
+      }
+    }
+
+
+    async function downloadFolder(
+      keys,
+      urlJson,
+      urlData,
+      button
+    ) {
+      const old =
+        button.textContent;
+
+      button.disabled = true;
+
+
+      let completed = 0;
+      let failed = 0;
+
+
+      try {
+        for (
+          let index = 0;
+          index < keys.length;
+          index++
+        ) {
+          const key =
+            keys[index];
+
+
+          button.textContent =
+            "Downloading " +
+            (index + 1) +
+            "/" +
+            keys.length;
+
+
+          try {
+            const file =
+              await getDecryptedFile(
+                key,
+                urlJson[key],
+                normalizeObject(
+                  urlData[key]
+                )
+              );
+
+
+            downloadBlob(
+              file.blob,
+              file.name
+            );
+
+
+            completed++;
+
+            await delay(450);
+
+          } catch (error) {
+            failed++;
+          }
+        }
+
+
+        showStatus(
+          completed +
+          " downloaded" +
+          (
+            failed
+              ? ", " +
+                failed +
+                " failed."
+              : "."
+          ),
+          failed
+            ? "error"
+            : "success"
+        );
+
+      } finally {
+        button.disabled = false;
+        button.textContent = old;
+      }
+    }
+
+
+    async function deleteOneImage(
+      folderName,
+      uniqueKey,
+      button
+    ) {
+      if (
+        !confirm(
+          "Delete this image from ImageKit and Supabase?"
+        )
+      ) {
+        return;
+      }
+
+
+      button.disabled = true;
+
+
+      try {
+        const row =
+          await getFolderRow(
+            folderName
+          );
+
+
+        if (!row) {
+          throw new Error(
+            "Folder was not found."
+          );
+        }
+
+
+        const urlJson =
+          normalizeObject(
+            row[
+              supabasedata.urlJsonColumn
+            ]
+          );
+
+
+        const urlData =
+          normalizeObject(
+            row[
+              supabasedata.urlDataColumn
+            ]
+          );
+
+
+        const fileData =
+          normalizeObject(
+            urlData[uniqueKey]
+          );
+
+
+        if (!fileData.fileId) {
+          throw new Error(
+            "ImageKit file ID is missing."
+          );
+        }
+
+
+        await deleteImageKitFile(
+          fileData.fileId
+        );
+
+
+        delete urlJson[uniqueKey];
+        delete urlData[uniqueKey];
+
+        decryptedCache.delete(
+          uniqueKey
+        );
+
+
+        await saveFolderObjects(
+          folderName,
+          urlJson,
+          urlData
+        );
+
+
+        showStatus(
+          "Image deleted.",
+          "success"
+        );
+
+
+        await resetFolders();
+
+      } catch (error) {
+        showStatus(
+          "Delete error: " +
+          error.message,
+          "error"
+        );
+
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+
+    async function deleteFolder(
+      folderName,
+      button
+    ) {
+      if (
+        !confirm(
+          "Delete every image in folder " +
+          folderName +
+          "?"
+        )
+      ) {
+        return;
+      }
+
+
+      const old =
+        button.textContent;
+
+      button.disabled = true;
+
+
+      try {
+        const row =
+          await getFolderRow(
+            folderName
+          );
+
+
+        if (!row) {
+          throw new Error(
+            "Folder was not found."
+          );
+        }
+
+
+        const urlJson =
+          normalizeObject(
+            row[
+              supabasedata.urlJsonColumn
+            ]
+          );
+
+
+        const urlData =
+          normalizeObject(
+            row[
+              supabasedata.urlDataColumn
+            ]
+          );
+
+
+        const keys =
+          Object.keys(urlJson);
+
+
+        let deleted = 0;
+        let failed = 0;
+
+
+        for (
+          let index = 0;
+          index < keys.length;
+          index++
+        ) {
+          const key =
+            keys[index];
+
+
+          button.textContent =
+            "Deleting " +
+            (index + 1) +
+            "/" +
+            keys.length;
+
+
+          try {
+            const data =
+              normalizeObject(
+                urlData[key]
+              );
+
+
+            if (!data.fileId) {
+              throw new Error(
+                "Missing file ID"
+              );
+            }
+
+
+            await deleteImageKitFile(
+              data.fileId
+            );
+
+
+            delete urlJson[key];
+            delete urlData[key];
+
+            decryptedCache.delete(key);
+
+            deleted++;
+
+          } catch (error) {
+            failed++;
+          }
+        }
+
+
+        await saveFolderObjects(
+          folderName,
+          urlJson,
+          urlData
+        );
+
+
+        showStatus(
+          deleted +
+          " deleted" +
+          (
+            failed
+              ? ", " +
+                failed +
+                " failed."
+              : "."
+          ),
+          failed
+            ? "error"
+            : "success"
+        );
+
+
+        await resetFolders();
+
+      } finally {
+        button.disabled = false;
+        button.textContent = old;
+      }
+    }
+
+
+    async function saveFolderObjects(
+      folderName,
+      urlJson,
+      urlData
+    ) {
+      if (
+        Object.keys(urlJson).length === 0
+      ) {
+        const {
+          error
+        } = await supabaseClient
+          .from(
+            supabasedata.tableName
+          )
+          .delete()
+          .eq(
+            supabasedata.folderNameColumn,
+            folderName
+          );
+
+
+        if (error) {
+          throw error;
+        }
+
+
+        return;
+      }
+
+
+      const update = {};
+
+      update[
+        supabasedata.urlJsonColumn
+      ] = urlJson;
+
+      update[
+        supabasedata.urlDataColumn
+      ] = urlData;
+
+
+      const {
+        error
+      } = await supabaseClient
+        .from(
+          supabasedata.tableName
+        )
+        .update(update)
+        .eq(
+          supabasedata.folderNameColumn,
+          folderName
+        );
+
+
+      if (error) {
+        throw error;
+      }
+    }
+
+
+    async function uploadToImageKit(file) {
+      const token =
+        createId();
+
+
+      const expire =
+        Math.floor(
+          Date.now() / 1000
+        ) +
+        1800;
+
+
+      const signature =
+        await createImageKitSignature(
+          token,
+          expire
+        );
+
+
+      const formData =
+        new FormData();
+
+
+      formData.append(
+        "file",
+        file
+      );
+
+      formData.append(
+        "fileName",
+        file.name
+      );
+
+      formData.append(
+        "publicKey",
+        imagekitdata.publicKey
+      );
+
+      formData.append(
+        "token",
+        token
+      );
+
+      formData.append(
+        "expire",
+        String(expire)
+      );
+
+      formData.append(
+        "signature",
+        signature
+      );
+
+      formData.append(
+        "useUniqueFileName",
+        String(
+          imagekitdata.useUniqueFileName
+        )
+      );
+
+
+      if (imagekitdata.folder) {
+        formData.append(
+          "folder",
+          imagekitdata.folder
+        );
+      }
+
+
+      const response =
+        await fetch(
+          "https://upload.imagekit.io/api/v1/files/upload",
+          {
+            method: "POST",
+            body: formData
+          }
+        );
+
+
+      const result =
+        await readResponse(response);
+
+
+      if (!response.ok) {
+        throw new Error(
+          result.message ||
+          result.error ||
+          "ImageKit upload failed."
+        );
+      }
+
+
+      if (
+        !result.fileId ||
+        !result.url
+      ) {
+        throw new Error(
+          "ImageKit did not return a file ID or URL."
+        );
+      }
+
+
+      return result;
+    }
+
+
+    async function deleteImageKitFile(
+      fileId
+    ) {
+      const authorization =
+        "Basic " +
+        btoa(
+          imagekitdata.privateKey +
+          ":"
+        );
+
+
+      const response =
+        await fetch(
+          "https://api.imagekit.io/v1/files/" +
+          encodeURIComponent(fileId),
+          {
+            method: "DELETE",
+
+            headers: {
+              Authorization:
+                authorization
+            }
+          }
+        );
+
+
+      if (!response.ok) {
+        const result =
+          await readResponse(response);
+
+
+        throw new Error(
+          result.message ||
+          result.error ||
+          "ImageKit deletion failed."
+        );
+      }
+    }
+
+
+    async function createImageKitSignature(
+      token,
+      expire
+    ) {
+      const encoder =
+        new TextEncoder();
+
+
+      const key =
+        await crypto.subtle.importKey(
+          "raw",
+          encoder.encode(
+            imagekitdata.privateKey
+          ),
+          {
+            name: "HMAC",
+            hash: "SHA-1"
+          },
+          false,
+          ["sign"]
+        );
+
+
+      const result =
+        await crypto.subtle.sign(
+          "HMAC",
+          key,
+          encoder.encode(
+            token + expire
+          )
+        );
+
+
+      return Array.from(
+        new Uint8Array(result)
+      )
+        .map(
+          function (byte) {
+            return byte
+              .toString(16)
+              .padStart(2, "0");
+          }
+        )
+        .join("");
+    }
+
+
+    async function encryptImage(
+      file,
+      renamedName
+    ) {
+      const salt =
+        crypto.getRandomValues(
+          new Uint8Array(
+            encryptionConfig.saltLength
+          )
+        );
+
+
+      const iv =
+        crypto.getRandomValues(
+          new Uint8Array(
+            encryptionConfig.ivLength
+          )
+        );
+
+
+      const key =
+        await deriveKey(salt);
+
+
+      const encrypted =
+        await crypto.subtle.encrypt(
+          {
+            name: "AES-GCM",
+            iv: iv,
+            tagLength: 128
+          },
+          key,
+          await file.arrayBuffer()
+        );
+
+
+      const header = {
+        version: 1,
+        algorithm: "AES-256-GCM",
+        iterations:
+          encryptionConfig.iterations,
+        saltLength:
+          salt.length,
+        ivLength:
+          iv.length,
+        originalName:
+          renamedName,
+        mimeType:
+          file.type ||
+          "application/octet-stream"
+      };
+
+
+      const headerBytes =
+        new TextEncoder().encode(
+          JSON.stringify(header)
+        );
+
+
+      const lengthBytes =
+        new Uint8Array(4);
+
+
+      new DataView(
+        lengthBytes.buffer
+      ).setUint32(
+        0,
+        headerBytes.length,
+        false
+      );
+
+
+      return new Blob(
+        [
+          lengthBytes,
+          headerBytes,
+          salt,
+          iv,
+          new Uint8Array(encrypted)
+        ],
+        {
+          type:
+            "application/octet-stream"
+        }
+      );
+    }
+
+
+    async function decryptBin(
+      arrayBuffer
+    ) {
+      const bytes =
+        new Uint8Array(arrayBuffer);
+
+
+      if (bytes.length < 5) {
+        throw new Error(
+          "Invalid encrypted file."
+        );
+      }
+
+
+      const headerLength =
+        new DataView(
+          bytes.buffer,
+          bytes.byteOffset,
+          4
+        ).getUint32(
+          0,
+          false
+        );
+
+
+      const headerEnd =
+        4 + headerLength;
+
+
+      if (
+        headerLength <= 0 ||
+        headerEnd >= bytes.length
+      ) {
+        throw new Error(
+          "Invalid encrypted header."
+        );
+      }
+
+
+      const header =
+        JSON.parse(
+          new TextDecoder().decode(
+            bytes.slice(
+              4,
+              headerEnd
+            )
+          )
+        );
+
+
+      const saltEnd =
+        headerEnd +
+        header.saltLength;
+
+
+      const ivEnd =
+        saltEnd +
+        header.ivLength;
+
+
+      const salt =
+        bytes.slice(
+          headerEnd,
+          saltEnd
+        );
+
+
+      const iv =
+        bytes.slice(
+          saltEnd,
+          ivEnd
+        );
+
+
+      const key =
+        await deriveKey(
+          salt,
+          header.iterations
+        );
+
+
+      const decrypted =
+        await crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv: iv,
+            tagLength: 128
+          },
+          key,
+          bytes.slice(ivEnd)
+        );
+
+
+      return {
+        name:
+          header.originalName ||
+          "image",
+
+        blob:
+          new Blob(
+            [decrypted],
+            {
+              type:
+                header.mimeType ||
+                "application/octet-stream"
+            }
+          )
+      };
+    }
+
+
+    async function deriveKey(
+      salt,
+      iterations =
+        encryptionConfig.iterations
+    ) {
+      const passwordKey =
+        await crypto.subtle.importKey(
+          "raw",
+          new TextEncoder().encode(
+            encryptionPassword
+          ),
+          "PBKDF2",
+          false,
+          ["deriveKey"]
+        );
+
+
+      return crypto.subtle.deriveKey(
+        {
+          name: "PBKDF2",
+          salt: salt,
+          iterations: iterations,
+          hash: "SHA-256"
+        },
+        passwordKey,
+        {
+          name: "AES-GCM",
+          length: 256
+        },
+        false,
+        [
+          "encrypt",
+          "decrypt"
+        ]
+      );
+    }
+
+
+    function detectScreenshotDateTime(
+      fileName
+    ) {
+      const extension =
+        getExtension(fileName);
+
+
+      const base =
+        removeExtension(fileName)
+          .replace(/\[/g, "")
+          .replace(/\]/g, "");
+
+
+      const match =
+        base.match(
+          /(?:^|[^0-9])(\d{8})[_-]?(\d{6})(?:[^0-9]|$)/
+        );
+
+
+      if (!match) {
+        return {
+          detected: false
+        };
+      }
+
+
+      const date =
+        match[1];
+
+      const time =
+        match[2];
+
+
+      if (
+        !validDateTime(
+          date,
+          time
+        )
+      ) {
+        return {
+          detected: false
+        };
+      }
+
+
+      return {
+        detected: true,
+
+        timestamp:
+          date + time,
+
+        renamedName:
+          date +
+          "_" +
+          time.substring(0, 4) +
+          " " +
+          sanitizeBaseName(base) +
+          (
+            extension
+              ? "." +
+                extension.toLowerCase()
+              : ""
+          )
+      };
+    }
+
+
+    function formatTimestampAsFolder(
+      timestamp
+    ) {
+      return (
+        timestamp.substring(0, 8) +
+        "_" +
+        timestamp.substring(8, 14)
+      );
+    }
+
+
+    function validDateTime(
+      date,
+      time
+    ) {
+      const year =
+        Number(
+          date.substring(0, 4)
+        );
+
+      const month =
+        Number(
+          date.substring(4, 6)
+        );
+
+      const day =
+        Number(
+          date.substring(6, 8)
+        );
+
+      const hour =
+        Number(
+          time.substring(0, 2)
+        );
+
+      const minute =
+        Number(
+          time.substring(2, 4)
+        );
+
+      const second =
+        Number(
+          time.substring(4, 6)
+        );
+
+
+      if (
+        month < 1 ||
+        month > 12 ||
+        day < 1 ||
+        hour > 23 ||
+        minute > 59 ||
+        second > 59
+      ) {
+        return false;
+      }
+
+
+      const test =
+        new Date(
+          year,
+          month - 1,
+          day
+        );
+
+
+      return (
+        test.getFullYear() === year &&
+        test.getMonth() ===
+          month - 1 &&
+        test.getDate() === day
+      );
+    }
+
+
+    function getImageName(
+      data,
+      fallback = "image"
+    ) {
+      return sanitizeDownloadName(
+        data.originalImageName ||
+        fallback
+      );
+    }
+
+
+    function downloadBlob(
+      blob,
+      fileName
+    ) {
+      const url =
+        URL.createObjectURL(blob);
+
+
+      const link =
+        document.createElement("a");
+
+      link.href = url;
+
+      link.download =
+        sanitizeDownloadName(
+          fileName
+        );
+
+      document.body.appendChild(link);
+
+      link.click();
+      link.remove();
+
+
+      setTimeout(
+        function () {
+          URL.revokeObjectURL(url);
+        },
+        4000
+      );
+    }
+
+
+    function normalizeObject(value) {
+      if (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+      ) {
+        return {
+          ...value
+        };
+      }
+
+
+      if (
+        typeof value === "string"
+      ) {
+        try {
+          const parsed =
+            JSON.parse(value);
+
+
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            !Array.isArray(parsed)
+          ) {
+            return parsed;
+          }
+        } catch {
+          return {};
+        }
+      }
+
+
+      return {};
+    }
+
+
+    function hasFiles(event) {
+      return (
+        event.dataTransfer &&
+        event.dataTransfer.types &&
+        Array.from(
+          event.dataTransfer.types
+        ).includes("Files")
+      );
+    }
+
+
+    function removePageDragState() {
+      pageDragCounter = 0;
+
+      document.body.classList.remove(
+        "dragging-page"
+      );
+
+      dropArea.classList.remove(
+        "active"
+      );
+    }
+
+
+    function sanitizeFileName(name) {
+      const extension =
+        getExtension(name);
+
+
+      const base =
+        sanitizeBaseName(
+          removeExtension(name)
+        ) ||
+        "image";
+
+
+      return (
+        base +
+        (
+          extension
+            ? "." +
+              extension
+                .replace(
+                  /[^a-zA-Z0-9]/g,
+                  ""
+                )
+                .toLowerCase()
+            : ""
+        )
+      );
+    }
+
+
+    function sanitizeBaseName(name) {
+      return String(name)
+        .replace(
+          /[<>:"/\\|?*\u0000-\u001F]/g,
+          "_"
+        )
+        .replace(/\s+/g, " ")
+        .replace(/_+/g, "_")
+        .trim();
+    }
+
+
+    function sanitizeDownloadName(name) {
+      return (
+        String(name || "image")
+          .replace(
+            /[<>:"/\\|?*\u0000-\u001F]/g,
+            "_"
+          )
+          .trim() ||
+        "image"
+      );
+    }
+
+
+    function getExtension(fileName) {
+      const index =
+        fileName.lastIndexOf(".");
+
+
+      if (
+        index <= 0 ||
+        index ===
+          fileName.length - 1
+      ) {
+        return "";
+      }
+
+
+      return fileName.substring(
+        index + 1
+      );
+    }
+
+
+    function removeExtension(fileName) {
+      const index =
+        fileName.lastIndexOf(".");
+
+
+      return index <= 0
+        ? fileName
+        : fileName.substring(
+            0,
+            index
+          );
+    }
+
+
+    function createId() {
+      return typeof crypto.randomUUID ===
+        "function"
+        ? crypto.randomUUID()
+        : (
+            Date.now().toString(36) +
+            Math.random()
+              .toString(36)
+              .slice(2)
+          );
+    }
+
+
+    function createUniqueKey() {
+      const random =
+        crypto.getRandomValues(
+          new Uint32Array(2)
+        );
+
+
+      return (
+        "file_" +
+        Date.now().toString(36) +
+        "_" +
+        random[0].toString(36) +
+        random[1].toString(36)
+      );
+    }
+
+
+    function addCacheBuster(url) {
+      return (
+        url +
+        (
+          url.includes("?")
+            ? "&"
+            : "?"
+        ) +
+        "t=" +
+        Date.now()
+      );
+    }
+
+
+    function revokeUrl(url) {
+      if (!url) {
+        return;
+      }
+
+      URL.revokeObjectURL(url);
+      objectUrls.delete(url);
+    }
+
+
+    function delay(milliseconds) {
+      return new Promise(
+        function (resolve) {
+          setTimeout(
+            resolve,
+            milliseconds
+          );
+        }
+      );
+    }
+
+
+    async function readResponse(
+      response
+    ) {
+      const text =
+        await response.text();
+
+
+      if (!text) {
+        return {};
+      }
+
+
+      try {
+        return JSON.parse(text);
+      } catch {
+        return {
+          message: text
+        };
+      }
+    }
+
+
+    function setUploading(uploading) {
+      uploadButton.disabled =
+        uploading;
+
+      clearButton.disabled =
+        uploading;
+
+      dropArea.style.pointerEvents =
+        uploading
+          ? "none"
+          : "";
+
+
+      uploadButton.textContent =
+        uploading
+          ? "Processing Images"
+          : (
+              selectionMode ===
+              "existing"
+                ? "Add Images to Folder"
+                : "Encrypt and Upload All"
+            );
+    }
+
+
+    function showProgress() {
+      progress.style.display =
+        "block";
+
+      updateProgress(
+        0,
+        1,
+        "Preparing"
+      );
+    }
+
+
+    function hideProgress() {
+      progress.style.display =
+        "none";
+
+      progressBar.style.width =
+        "0%";
+    }
+
+
+    function updateProgress(
+      completed,
+      total,
+      message
+    ) {
+      const percent =
+        total
+          ? Math.round(
+              completed /
+              total *
+              100
+            )
+          : 0;
+
+
+      progressMessage.textContent =
+        message;
+
+      progressPercent.textContent =
+        percent + "%";
+
+      progressBar.style.width =
+        percent + "%";
+    }
+
+
+    function showStatus(
+      message,
+      type = ""
+    ) {
+      statusElement.textContent =
+        message;
+
+      statusElement.className =
+        "status";
+
+
+      if (type) {
+        statusElement.classList.add(
+          type
+        );
+      }
+    }
+
+
+    function clearStatus() {
+      statusElement.textContent = "";
+      statusElement.className =
+        "status";
+    }
+
+
+    function validateSettings() {
+      if (
+        imagekitdata.publicKey.includes(
+          "YOUR_IMAGEKIT"
+        ) ||
+        imagekitdata.privateKey.includes(
+          "YOUR_IMAGEKIT"
+        )
+      ) {
+        showStatus(
+          "Add your ImageKit keys.",
+          "error"
+        );
+
+        return false;
+      }
+
+
+      if (
+        supabasedata.supabaseUrl.includes(
+          "YOUR_PROJECT"
+        ) ||
+        supabasedata.supabaseAnonKey.includes(
+          "YOUR_SUPABASE"
+        )
+      ) {
+        showStatus(
+          "Add your Supabase configuration.",
+          "error"
+        );
+
+        return false;
+      }
+
+
+      return true;
+    }
+
+
+    window.addEventListener(
+      "beforeunload",
+      function () {
+        for (const url of objectUrls) {
+          URL.revokeObjectURL(url);
+        }
+      }
+    );
+
+
+    window.addEventListener(
+      "DOMContentLoaded",
+      function () {
+        if (validateSettings()) {
+          clearStatus();
+          resetFolders();
+
+        } else {
+          folderList.innerHTML =
+            '<div class="empty">Add your ImageKit and Supabase configuration.</div>';
+
+          bottomSpinner.style.display =
+            "none";
+        }
+      }
+    );
+  </script>
+
+</body>
+</html> 
